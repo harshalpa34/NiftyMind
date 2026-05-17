@@ -3,11 +3,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
-from app.routes import router
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from app.core.logging import setup_logging
+from app.core.exceptions import register_exception_handlers
+from app.middleware.request_id import RequestIDMiddleware
+from app.api.routes.health import router as health_router
+from app.api.routes.webhooks import router as webhooks_router
+from app.api.routes.option_chain import router as option_chain_router
 
 # Get settings
 settings = get_settings()
@@ -17,6 +18,8 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
+    setup_logging()  # Initialize structured logging FIRST
+    logger = logging.getLogger(__name__)
     logger.info("🚀 NiftyMind API starting...")
     yield
     # Shutdown
@@ -32,6 +35,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Add middleware (order matters - request ID should be first)
+app.add_middleware(RequestIDMiddleware)
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -41,8 +47,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register global exception handlers
+register_exception_handlers(app)
+
 # Include routers
-app.include_router(router)
+app.include_router(health_router)
+app.include_router(webhooks_router)
+app.include_router(option_chain_router)
 
 
 if __name__ == "__main__":
