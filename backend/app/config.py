@@ -20,8 +20,12 @@ class Settings(BaseSettings):
     
     # SENSITIVE: AI/ML Configuration (REQUIRED from .env)
     openai_api_key: str = Field(..., description="Must be set in .env file")
-    model_name: str = Field(default="gpt-4")
+    gemini_api_key: str = Field(default="", description="Gemini API key")
+    model_name: str = Field(default="gemini-2.5-flash", description="LLM model to use (e.g., gpt-4, gemini-2.5-flash)")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    
+    # Claude/Anthropic Configuration (for NLP analysis)
+    anthropic_api_key: str = Field(default="")
     
     class Config:
         env_file = ".env"

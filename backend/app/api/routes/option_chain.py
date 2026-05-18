@@ -4,8 +4,10 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from app.models.option_chain import OptionChainSnapshot, OptionChainMetrics
 from app.models.oi_delta import OIDeltaReport
+from app.models.analysis import FullAnalysisResponse, MarketNarrative
 from app.services.oi_parser import oi_parser
 from app.services.oi_tracker import oi_tracker
+from app.services.nlp_translator import nlp_translator
 
 
 logger = logging.getLogger(__name__)
@@ -85,4 +87,51 @@ async def stream_option_chain(snapshot: OptionChainSnapshot) -> StreamResponse:
         metrics=metrics,
         delta=delta_report,
         is_baseline=(delta_report is None)
+    )
+
+
+@router.post(
+    "/option-chain/analyse",
+    response_model=FullAnalysisResponse,
+    status_code=200
+)
+async def analyse_option_chain(snapshot: OptionChainSnapshot) -> FullAnalysisResponse:
+    """
+    Complete analysis pipeline: metrics, delta tracking, and AI narrative
+    
+    Accepts raw option chain data and returns:
+    - Current metrics (PCR, max pain, sentiment)
+    - Delta report with OI spike detection (if previous snapshot exists)
+    - AI-generated market narrative (Claude-powered)
+    
+    Pipeline:
+    1. Process snapshot with oi_tracker (metrics + optional delta)
+    2. Generate narrative via Claude NLP translator
+    3. Return full analysis response
+    
+    Falls back to rule-based narrative if Claude API is unavailable.
+    """
+    logger.info(
+        "Option chain analysis pipeline triggered",
+        extra={
+            "snapshot_id": snapshot.snapshot_id,
+            "underlying": snapshot.underlying,
+            "strikes_count": len(snapshot.strikes)
+        }
+    )
+    
+    # Step 1: Process snapshot with tracking (metrics + delta)
+    metrics, delta_report = oi_tracker.process_snapshot(snapshot)
+    
+    # Step 2: Generate narrative via NLP translator
+    narrative = await nlp_translator.translate(metrics, delta_report)
+    
+    # Step 3: Return full analysis
+    return FullAnalysisResponse(
+        underlying=snapshot.underlying,
+        spot_price=snapshot.spot_price,
+        is_baseline=(delta_report is None),
+        metrics=metrics,
+        delta=delta_report,
+        narrative=narrative
     )
