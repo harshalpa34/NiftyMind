@@ -13,6 +13,7 @@ from app.models.trader import (
     TradeStatus
 )
 from app.graphs.trader_session import trader_graph
+from app.websockets.session_connection_manager import session_conn_manager
 
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 class SessionManagerService:
     """Service for managing trader sessions with LangGraph state machine"""
     
-    def create_session(self, user_id: str) -> TraderSessionSummary:
+    async def create_session(self, user_id: str) -> TraderSessionSummary:
         """
         Create a new trader session
         
@@ -61,7 +62,7 @@ class SessionManagerService:
         
         return self._get_summary(session_id)
     
-    def add_trade(
+    async def add_trade(
         self,
         session_id: str,
         symbol: str,
@@ -84,6 +85,10 @@ class SessionManagerService:
         Returns:
             Updated TraderSessionSummary
         """
+        # Capture flag count before trade
+        prev_raw_state = self._get_raw_state(session_id)
+        prev_flag_count = len(prev_raw_state.get("behavior_flags", [])) if prev_raw_state else 0
+        
         trade_id = str(uuid.uuid4())[:8]
         
         # Build trade record
@@ -114,9 +119,39 @@ class SessionManagerService:
             }
         )
         
-        return self._get_summary(session_id)
+        # Get updated summary
+        summary = self._get_summary(session_id)
+        
+        # Detect new flags
+        new_flags = summary.behavior_flags[prev_flag_count:] if len(summary.behavior_flags) > prev_flag_count else []
+        
+        # Send guardrail alert if new flags and session is connected
+        if new_flags and session_conn_manager.is_connected(session_id):
+            alert_dict = {
+                "total_pnl": summary.total_pnl,
+                "consecutive_losses": summary.consecutive_losses,
+                "guardrail_active": summary.guardrail_active
+            }
+            # Convert BehaviorFlag objects to dicts for alert
+            new_flags_dicts = [
+                {
+                    "flag_type": f.flag_type.value,
+                    "severity": f.severity.value,
+                    "description": f.description,
+                    "detected_at": f.detected_at.isoformat(),
+                    "trade_id": f.trade_id
+                }
+                for f in new_flags
+            ]
+            await session_conn_manager.send_guardrail_alert(
+                session_id,
+                new_flags_dicts,
+                alert_dict
+            )
+        
+        return summary
     
-    def close_trade(
+    async def close_trade(
         self,
         session_id: str,
         trade_id: str,
@@ -133,13 +168,14 @@ class SessionManagerService:
         Returns:
             Updated TraderSessionSummary
         """
-        # Get current state
-        raw_state = self._get_raw_state(session_id)
-        if not raw_state:
+        # Capture flag count before trade
+        prev_raw_state = self._get_raw_state(session_id)
+        if not prev_raw_state:
             raise ValueError(f"Session {session_id} not found")
+        prev_flag_count = len(prev_raw_state.get("behavior_flags", []))
         
         # Find the trade
-        trades = raw_state.get("trades", [])
+        trades = prev_raw_state.get("trades", [])
         target_trade = None
         for trade in trades:
             if trade.get("trade_id") == trade_id and trade.get("action") == "OPEN":
@@ -183,7 +219,37 @@ class SessionManagerService:
             }
         )
         
-        return self._get_summary(session_id)
+        # Get updated summary
+        summary = self._get_summary(session_id)
+        
+        # Detect new flags
+        new_flags = summary.behavior_flags[prev_flag_count:] if len(summary.behavior_flags) > prev_flag_count else []
+        
+        # Send guardrail alert if new flags and session is connected
+        if new_flags and session_conn_manager.is_connected(session_id):
+            alert_dict = {
+                "total_pnl": summary.total_pnl,
+                "consecutive_losses": summary.consecutive_losses,
+                "guardrail_active": summary.guardrail_active
+            }
+            # Convert BehaviorFlag objects to dicts for alert
+            new_flags_dicts = [
+                {
+                    "flag_type": f.flag_type.value,
+                    "severity": f.severity.value,
+                    "description": f.description,
+                    "detected_at": f.detected_at.isoformat(),
+                    "trade_id": f.trade_id
+                }
+                for f in new_flags
+            ]
+            await session_conn_manager.send_guardrail_alert(
+                session_id,
+                new_flags_dicts,
+                alert_dict
+            )
+        
+        return summary
     
     def get_session(self, session_id: str) -> Optional[TraderSessionSummary]:
         """
@@ -243,11 +309,13 @@ class SessionManagerService:
                 trade_id=flag_dict.get("trade_id")
             ))
         
-        # Count open trades
+        # Count open trades and extract open_trade_ids
         open_trades = 0
+        open_trade_ids = []
         for trade in raw_state.get("trades", []):
             if trade.get("action") == "OPEN":
                 open_trades += 1
+                open_trade_ids.append(trade.get("trade_id", ""))
         
         # Create and return summary
         return TraderSessionSummary(
@@ -255,6 +323,7 @@ class SessionManagerService:
             user_id=raw_state.get("user_id", ""),
             total_trades=raw_state.get("total_trades", 0),
             open_trades=open_trades,
+            open_trade_ids=open_trade_ids,
             total_pnl=raw_state.get("total_pnl", 0.0),
             consecutive_losses=raw_state.get("consecutive_losses", 0),
             consecutive_wins=raw_state.get("consecutive_wins", 0),

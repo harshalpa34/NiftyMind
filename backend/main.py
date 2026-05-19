@@ -11,6 +11,8 @@ from app.api.routes.health import router as health_router
 from app.api.routes.webhooks import router as webhooks_router
 from app.api.routes.option_chain import router as option_chain_router
 from app.api.routes.ws_feed import router as ws_feed_router
+from app.api.routes.ws_session import router as ws_session_router
+from app.api.routes.sessions import router as sessions_router
 from app.websockets.feed_simulator import run_feed_simulator
 
 # Get settings
@@ -75,6 +77,8 @@ app.include_router(health_router)
 app.include_router(webhooks_router)
 app.include_router(option_chain_router)
 app.include_router(ws_feed_router)
+app.include_router(ws_session_router)
+app.include_router(sessions_router, prefix="/api/v1")
 
 
 if __name__ == "__main__":

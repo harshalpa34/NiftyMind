@@ -7,6 +7,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.models.trader import BehaviorFlagType, FlagSeverity
+from app.services.behavior_analyzer import behavior_analyzer
 
 
 logger = logging.getLogger(__name__)
@@ -84,38 +85,30 @@ def detect_behavior(state: TraderSessionState) -> dict:
     Returns:
         Updated flags and guardrail status
     """
-    new_flags = []
+    # Get trades from state
+    trades = state.get("trades", [])
     guardrail_active = state.get("guardrail_active", False)
     
-    # Check for revenge trading (3+ consecutive losses)
-    consecutive_losses = state.get("consecutive_losses", 0)
-    if consecutive_losses >= 3:
-        new_flags.append({
-            "flag_type": BehaviorFlagType.REVENGE_TRADE.value,
-            "severity": FlagSeverity.HIGH.value,
-            "description": f"Detected {consecutive_losses} consecutive losses - potential revenge trading",
-            "detected_at": datetime.utcnow().isoformat(),
-            "trade_id": None
-        })
+    # Call behavior analyzer
+    new_flags = behavior_analyzer.analyze(trades, state)
+    
+    # Check if any HIGH severity flags — activate guardrail
+    high_severity_flags = [f for f in new_flags if f.get("severity") == "HIGH"]
+    if high_severity_flags:
         guardrail_active = True
+        flag_types = [f.get("flag_type") for f in high_severity_flags]
         logger.warning(
-            "Revenge trading detected",
+            "High-severity behavior flags detected - guardrail activated",
             extra={
                 "session_id": state.get("session_id"),
-                "consecutive_losses": consecutive_losses
+                "flag_count": len(new_flags),
+                "high_severity_flags": flag_types
             }
         )
     
-    # Check for overtrading (more than 10 trades)
-    total_trades = state.get("total_trades", 0)
-    if total_trades > 10:
-        new_flags.append({
-            "flag_type": BehaviorFlagType.OVERTRADING.value,
-            "severity": FlagSeverity.MEDIUM.value,
-            "description": f"Excessive trading activity: {total_trades} trades executed",
-            "detected_at": datetime.utcnow().isoformat(),
-            "trade_id": None
-        })
+    # Return updated state
+    if not new_flags:
+        return {"guardrail_active": guardrail_active}
     
     return {
         "behavior_flags": new_flags,

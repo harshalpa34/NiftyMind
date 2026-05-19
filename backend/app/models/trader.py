@@ -60,6 +60,7 @@ class TraderSessionSummary(BaseModel):
     user_id: str
     total_trades: int
     open_trades: int
+    open_trade_ids: list[str] = []
     total_pnl: float
     consecutive_losses: int
     consecutive_wins: int
