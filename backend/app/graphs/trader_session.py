@@ -1,13 +1,16 @@
 import logging
+import os
+import sqlite3
 from typing import TypedDict, Annotated
 from datetime import datetime
 from operator import add
 
 from langgraph.graph import StateGraph, START, END
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from app.models.trader import BehaviorFlagType, FlagSeverity
 from app.services.behavior_analyzer import behavior_analyzer
+from app.config import get_settings
 
 
 logger = logging.getLogger(__name__)
@@ -137,8 +140,34 @@ def build_trader_graph() -> StateGraph:
     return graph
 
 
-# Memory checkpointer for session persistence
-_checkpointer = MemorySaver()
+def initialize_graph():
+    """
+    Initializes the LangGraph trader session graph with SqliteSaver.
+    Creates the data directory and SQLite database file if they don't exist.
+    Called once at application startup from the lifespan manager.
+    
+    Returns:
+        Compiled graph with SQLite checkpointer
+    """
+    settings = get_settings()
+    db_dir = os.path.dirname(settings.db_path)
+    
+    # Create data directory if needed
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+    
+    # Create sqlite3 connection and initialize SqliteSaver
+    conn = sqlite3.connect(settings.db_path, check_same_thread=False)
+    checkpointer = SqliteSaver(conn)
+    graph = build_trader_graph().compile(checkpointer=checkpointer)
+    
+    logger.info(
+        "Trader graph initialized with SqliteSaver",
+        extra={"db_path": settings.db_path}
+    )
+    
+    return graph
 
-# Compiled trader graph
-trader_graph = build_trader_graph().compile(checkpointer=_checkpointer)
+
+# Module-level trader_graph — initialized in lifespan
+trader_graph = None

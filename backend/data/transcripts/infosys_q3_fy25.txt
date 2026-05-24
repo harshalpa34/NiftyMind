@@ -1,0 +1,33 @@
+COMPANY: Infosys Limited (NSE: INFY)
+QUARTER: Q3 FY2025
+DATE: January 16, 2025
+TYPE: Earnings Call Transcript
+
+MANAGEMENT COMMENTARY - CEO Salil Parekh:
+We are pleased to report revenue of $4.7 billion for Q3 FY2025, 
+representing 7.1% growth in constant currency terms. Our large deal 
+wins totaled $2.5 billion, reflecting continued client confidence 
+in our AI-first strategy. We are seeing strong demand in financial 
+services and manufacturing verticals.
+
+MANAGEMENT COMMENTARY - CFO Jayesh Sanghrajka:
+Operating margins came in at 21.3%, expanding 50 basis points 
+sequentially. This improvement was driven by better utilization rates 
+at 82.5% and reduced subcontracting costs. We expect margins to 
+remain in the 20-22% band for Q4 FY2025. Employee costs remain 
+our largest expense at 58% of revenue.
+
+ANALYST Q&A:
+Q (JPMorgan): Can you elaborate on the pricing environment?
+A (CEO): We are seeing stable pricing across most segments. However, 
+discretionary spending remains muted in the BFSI sector. We expect 
+recovery in H2 FY2026 as interest rate uncertainty resolves.
+
+Q (Goldman Sachs): What is your headcount guidance?
+A (CFO): We plan to hire 15,000 freshers in FY2025. Attrition has 
+stabilized at 12.9%, the lowest in 10 quarters. We are investing 
+heavily in reskilling employees on GenAI and cloud platforms.
+
+CORPORATE ACTIONS:
+Interim dividend of Rs 21 per share declared.
+Buyback program of Rs 9,200 crore approved by board.

@@ -1,0 +1,33 @@
+COMPANY: Tata Consultancy Services (NSE: TCS)
+QUARTER: Q3 FY2025
+DATE: January 9, 2025
+TYPE: Earnings Call Transcript
+
+MANAGEMENT COMMENTARY - CEO K Krithivasan:
+TCS reported revenue of $7.5 billion for Q3 FY2025, growing 5.6% 
+in constant currency. We continue to lead in AI transformation 
+engagements, with over 600 AI projects delivered this quarter. 
+Our order book remains healthy with total contract value of $10.2 billion.
+
+MANAGEMENT COMMENTARY - CFO Samir Seksaria:
+EBIT margins stood at 24.5%, within our guided range of 26-28% 
+after accounting for wage revision impact. Net income grew 12% 
+year-over-year to Rs 12,380 crore. Free cash flow conversion 
+remained strong at 98.5% of net income.
+
+ANALYST Q&A:
+Q (Morgan Stanley): How is GenAI adoption progressing with clients?
+A (CEO): Clients are moving from proof-of-concept to production 
+deployments. We see GenAI adding 1-2% to revenue growth in FY2026. 
+Our proprietary platform WisdomNext is gaining strong traction in 
+the BFSI and healthcare sectors.
+
+Q (UBS): Comment on North America demand environment.
+A (CEO): North America grew 3.2% and remains our largest market at 
+53% of revenue. BFSI clients are cautious on discretionary spend 
+but are prioritizing cost optimization and compliance projects.
+
+CORPORATE ACTIONS:
+Final dividend of Rs 76 per share recommended.
+Special dividend of Rs 400 per share announced.
+Share buyback of Rs 17,000 crore at Rs 4,500 per share approved.

@@ -122,3 +122,26 @@ async def close_trade(session_id: str, request: CloseTradeRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/sessions/{session_id}/recover", response_model=TraderSessionSummary, status_code=200)
+async def recover_session(session_id: str):
+    """
+    Recover a persisted session after server restart
+    
+    Args:
+        session_id: Session identifier
+        
+    Returns:
+        TraderSessionSummary
+        
+    Raises:
+        HTTPException 404 if session not found or expired
+    """
+    logger.info("Recovering trader session", extra={"session_id": session_id})
+    session = session_manager.get_session(session_id)
+    
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found or expired")
+    
+    return session

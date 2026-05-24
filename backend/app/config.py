@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # Claude/Anthropic Configuration (for NLP analysis)
     anthropic_api_key: str = Field(default="")
     
+    # Database Configuration
+    db_path: str = Field(default="./data/niftymind.db")
+    
     class Config:
         env_file = ".env"
         case_sensitive = False

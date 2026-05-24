@@ -1,0 +1,32 @@
+COMPANY: HDFC Bank Limited (NSE: HDFCBANK)
+QUARTER: Q3 FY2025
+DATE: January 22, 2025
+TYPE: Earnings Call Transcript
+
+MANAGEMENT COMMENTARY - CEO Sashidhar Jagdishan:
+Net interest income grew 8.1% year-over-year to Rs 30,650 crore. 
+Net interest margin compressed to 3.4% from 3.6% a year ago, 
+reflecting higher cost of deposits in a rising rate environment. 
+Our loan book grew 12% with retail loans comprising 54% of total advances.
+
+MANAGEMENT COMMENTARY - CFO Srinivasan Vaidyanathan:
+Asset quality remained stable with gross NPA at 1.26%. Provisions 
+were Rs 4,217 crore, reflecting proactive credit risk management. 
+Capital adequacy ratio stands at 19.3%, providing strong buffer 
+for growth. Return on equity was 15.8% for the quarter.
+
+ANALYST Q&A:
+Q (Jefferies): What is your deposit growth strategy?
+A (CEO): We are focusing on granular retail deposits through our 
+branch network of 8,300+ branches. CD ratio has improved to 87% 
+from 90% a year ago. We expect NIMs to stabilize at 3.4-3.5% 
+as deposit competition moderates.
+
+Q (Nomura): Commentary on credit costs going forward.
+A (CFO): We expect credit costs to remain in the 50-60 bps range. 
+Unsecured retail stress is manageable and within our risk appetite. 
+MSME book continues to perform well with NPA below industry average.
+
+CORPORATE ACTIONS:
+Dividend of Rs 19.50 per share declared.
+Rights issue consideration deferred to next quarter.

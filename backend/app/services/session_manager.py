@@ -12,7 +12,7 @@ from app.models.trader import (
     TradeDirection,
     TradeStatus
 )
-from app.graphs.trader_session import trader_graph
+import app.graphs.trader_session as trader_session_module
 from app.websockets.session_connection_manager import session_conn_manager
 
 
@@ -53,7 +53,7 @@ class SessionManagerService:
         
         # Invoke graph
         config = {"configurable": {"thread_id": session_id}}
-        trader_graph.invoke(initial_state, config=config)
+        trader_session_module.trader_graph.invoke(initial_state, config=config)
         
         logger.info(
             "Trader session created",
@@ -106,7 +106,7 @@ class SessionManagerService:
         
         # Invoke graph
         config = {"configurable": {"thread_id": session_id}}
-        trader_graph.invoke({"trades": [trade_record]}, config=config)
+        trader_session_module.trader_graph.invoke({"trades": [trade_record]}, config=config)
         
         logger.info(
             "Trade opened",
@@ -207,7 +207,7 @@ class SessionManagerService:
         
         # Invoke graph
         config = {"configurable": {"thread_id": session_id}}
-        trader_graph.invoke({"trades": [close_record]}, config=config)
+        trader_session_module.trader_graph.invoke({"trades": [close_record]}, config=config)
         
         logger.info(
             "Trade closed",
@@ -278,7 +278,7 @@ class SessionManagerService:
             Raw state dict or None if not found
         """
         config = {"configurable": {"thread_id": session_id}}
-        state = trader_graph.get_state(config)
+        state = trader_session_module.trader_graph.get_state(config)
         
         if state and state.values:
             return state.values
