@@ -21,6 +21,8 @@ def test_create_and_persist():
     print("  STEP 1: Creating session and adding 2 trades...")
     print("="*60)
     
+    
+    
     # Create session
     r = httpx.post(f"{BASE}/sessions?user_id=harshal")
     session = check(r, "Create session")
