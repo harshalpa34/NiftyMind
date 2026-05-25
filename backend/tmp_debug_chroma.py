@@ -1,37 +1,47 @@
-import traceback
-from app.rag.document_loader import load_transcripts, chunk_documents
-from app.rag.vector_store import vector_store
 import chromadb
+from chromadb.utils import embedding_functions
+import os
+os.environ["GOOGLE_API_KEY"] = ""  # will read from config
 
-print('chromadb version:', chromadb.__version__)
-docs = load_transcripts('data/transcripts')
-print('docs', len(docs))
-chunks = chunk_documents(docs)
-print('chunks', len(chunks))
-ids = [c.metadata.get('chunk_id', f'chunk_{i}') for i, c in enumerate(chunks)]
-documents = [c.page_content for c in chunks]
-metadatas = [c.metadata for c in chunks]
-print('lens', len(ids), len(documents), len(metadatas))
-print('sample ids', ids[:3])
-print('sample meta', metadatas[0])
-vector_store._initialize()
-print('initialized collection')
-print('embedding function type:', type(vector_store._collection._embedding_function))
-try:
-    emb = vector_store._collection._embedding_function(['hello', 'world'])
-    print('embedding output type:', type(emb))
-    print('embedding count:', len(emb))
-    print('embedding first item type:', type(emb[0]))
-    print('embedding first item length:', len(emb[0]))
-except Exception:
-    print('embedding function failed:')
-    traceback.print_exc()
+# Load config
+import sys
+sys.path.insert(0, ".")
+from app.config import get_settings
+settings = get_settings()
 
-try:
-    print('attempting explicit embeddings upsert')
-    explicit_embeddings = [list(map(float, emb[0])), list(map(float, emb[1]))] if 'emb' in locals() else [[0.0]*3072, [0.0]*3072]
-    vector_store._collection.upsert(ids=ids[:2], embeddings=explicit_embeddings, metadatas=metadatas[:2], documents=documents[:2])
-    print('explicit upsert success', vector_store._collection.count())
-except Exception:
-    print('explicit upsert failed:')
-    traceback.print_exc()
+# Connect to existing ChromaDB
+client = chromadb.PersistentClient(path="data/chroma_db")
+
+# List all collections
+print("Collections:", client.list_collections())
+
+# Connect to collection
+embedding_fn = embedding_functions.GoogleGenerativeAiEmbeddingFunction(
+    api_key=settings.gemini_api_key,
+    model_name="models/text-embedding-004"
+)
+
+collection = client.get_collection(
+    name="earnings_transcripts",
+    embedding_function=embedding_fn
+)
+
+print(f"Total vectors: {collection.count()}")
+
+# Peek at stored data
+peek = collection.peek(limit=3)
+print("\nSample documents:")
+for i, doc in enumerate(peek["documents"]):
+    print(f"\n[{i}] {doc[:100]}...")
+    print(f"    Metadata: {peek['metadatas'][i]}")
+
+# Try raw query
+print("\n--- Raw Query Test ---")
+results = collection.query(
+    query_texts=["What are the operating margins?"],
+    n_results=3,
+    include=["documents", "metadatas"]
+)
+print(f"Results found: {len(results['documents'][0])}")
+for i, doc in enumerate(results["documents"][0]):
+    print(f"\n[{i}] {doc[:150]}...")

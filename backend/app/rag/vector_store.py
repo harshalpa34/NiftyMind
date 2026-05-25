@@ -1,147 +1,247 @@
 import logging
+import time
 from typing import Optional
 
-import chromadb
+from pinecone import Pinecone, ServerlessSpec
 from langchain_core.documents import Document
 
 from app.config import get_settings
 from app.rag.embeddings import get_embeddings, get_query_embeddings
 
-logger = logging.getLogger(__name__)
+logger   = logging.getLogger(__name__)
+settings = get_settings()
 
-CHROMA_PERSIST_DIR = "data/chroma_db"
-COLLECTION_NAME = "earnings_transcripts"
+# ---------------------------------------------------------------------------
+# Pinecone Configuration
+# Namespace strategy: store all transcripts in default namespace for now.
+# Step 3 introduces per-company namespacing via Neo4j graph metadata.
+# ---------------------------------------------------------------------------
+DEFAULT_NAMESPACE = "earnings"
+EMBEDDING_DIMENSION = settings.embedding_dimension    # Must match Pinecone index config
 
 
-class ChromaVectorStoreService:
-    """Service for managing ChromaDB vector store operations."""
+class PineconeVectorStoreService:
+    """
+    Production vector store using Pinecone serverless.
+
+    Migration from ChromaDB:
+    - Same public interface: ingest(), query(), get_stats()
+    - Pinecone requires explicit vector IDs and embeddings
+    - Metadata filtering uses Pinecone's native filter syntax
+    - Namespacing isolates document sets (per-company in Step 3)
+
+    The Strategy Pattern in action:
+    - ChromaDB (Step 1) and Pinecone (Step 2) implement identical interfaces
+    - Routes and services never changed — only this file
+    - In a real codebase this would be an abstract base class
+    """
 
     def __init__(self):
-        self._client = None
-        self._collection = None
+        self._client: Optional[Pinecone] = None
+        self._index  = None
 
-    def _initialize(self):
-        """Initialize ChromaDB client and collection if not already done."""
-        if self._client is not None:
+    def _initialize(self) -> None:
+        """
+        Lazily initializes Pinecone client and connects to index.
+        Called before every operation — safe to call multiple times.
+        """
+        if self._index is not None:
             return
 
-        try:
-            self._client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
-            self._collection = self._client.get_or_create_collection(name=COLLECTION_NAME)
-
-            logger.info(
-                "ChromaDB initialized",
-                extra={"persist_dir": CHROMA_PERSIST_DIR, "collection": COLLECTION_NAME}
+        if not settings.pinecone_api_key:
+            raise ValueError(
+                "PINECONE_API_KEY not set in .env — "
+                "get your key from app.pinecone.io"
             )
-        except Exception as e:
-            logger.error(f"Failed to initialize ChromaDB: {e}")
-            raise
+
+        self._client = Pinecone(api_key=settings.pinecone_api_key)
+        self._index  = self._client.Index(settings.pinecone_index_name)
+
+        # Verify connection by fetching index stats
+        stats = self._index.describe_index_stats()
+
+        logger.info(
+            "Pinecone connected",
+            extra={
+                "index":        settings.pinecone_index_name,
+                "total_vectors": stats.get("total_vector_count", 0),
+                "dimension":    EMBEDDING_DIMENSION,
+            },
+        )
 
     def ingest(self, chunks: list[Document]) -> int:
-        """Ingest document chunks into the vector store."""
+        """
+        Embeds and upserts document chunks into Pinecone.
+
+        Pinecone upsert is idempotent — re-ingesting the same chunk_id
+        updates it rather than creating a duplicate. Safe to run multiple times.
+
+        Batches in groups of 100 — Pinecone's recommended batch size.
+        """
         if not chunks:
+            logger.warning("No chunks to ingest")
             return 0
 
-        try:
-            self._initialize()
+        self._initialize()
 
-            ids = [chunk.metadata.get("chunk_id", f"chunk_{i}") for i, chunk in enumerate(chunks)]
-            documents = [chunk.page_content for chunk in chunks]
-            metadatas = [chunk.metadata for chunk in chunks]
+        logger.info(
+            "Starting Pinecone ingestion",
+            extra={"chunks": len(chunks), "namespace": DEFAULT_NAMESPACE},
+        )
 
-            embedder = get_embeddings()
-            embeddings = []
-            for document in documents:
-                single_emb = embedder.embed_documents([document])
-                if isinstance(single_emb, list) and len(single_emb) == 1:
-                    embeddings.append(single_emb[0])
-                else:
-                    embeddings.extend(single_emb)
+        # Generate embeddings for all chunks
+        embedder    = get_embeddings()
+        texts       = [c.page_content for c in chunks]
+        embeddings  = embedder.embed_documents(texts)
 
-            if len(embeddings) != len(documents):
-                raise ValueError(
-                    f"Embedding count {len(embeddings)} does not match document count {len(documents)}"
-                )
+        # Build Pinecone vector records
+        vectors = []
+        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+            vector_id = chunk.metadata.get("chunk_id", f"chunk_{i}")
 
-            self._collection.upsert(
-                ids=ids,
-                documents=documents,
-                metadatas=metadatas,
-                embeddings=embeddings
+            # Pinecone metadata must be flat key-value pairs
+            # Convert all values to strings to avoid type issues
+            metadata = {
+                k: str(v)
+                for k, v in chunk.metadata.items()
+                if v is not None
+            }
+            metadata["text"] = chunk.page_content    # Store text in metadata too
+
+            vectors.append({
+                "id":     vector_id,
+                "values": embedding,
+                "metadata": metadata,
+            })
+
+        # Upsert in batches of 100 (Pinecone recommendation)
+        batch_size     = 100
+        total_upserted = 0
+
+        for i in range(0, len(vectors), batch_size):
+            batch = vectors[i: i + batch_size]
+            self._index.upsert(
+                vectors=batch,
+                namespace=DEFAULT_NAMESPACE,
+            )
+            total_upserted += len(batch)
+            logger.debug(
+                "Batch upserted",
+                extra={"batch": i // batch_size + 1, "vectors": len(batch)},
             )
 
-            logger.info(
-                "Ingestion complete",
-                extra={"chunks_ingested": len(chunks)}
-            )
+        logger.info(
+            "Pinecone ingestion complete",
+            extra={
+                "vectors_upserted": total_upserted,
+                "namespace": DEFAULT_NAMESPACE,
+            },
+        )
 
-            return len(chunks)
-        except Exception as e:
-            logger.error(f"Failed to ingest chunks: {e}")
-            return 0
+        return total_upserted
 
     def query(
         self,
         question: str,
         top_k: int = 4,
-        filter_company: Optional[str] = None
+        filter_company: Optional[str] = None,
     ) -> list[Document]:
-        """Query the vector store for relevant documents."""
+        """
+        Semantic similarity search over Pinecone index.
+
+        Uses query embeddings (retrieval_query task type) for better
+        asymmetric retrieval — short query vs long document chunks.
+
+        Company filtering: Pinecone supports exact metadata filters.
+        For partial match (e.g. "TCS" matching "Tata Consultancy Services"),
+        we fetch extra results and post-filter in Python.
+        """
+        self._initialize()
+
         try:
-            self._initialize()
+            # Embed the question
+            embedder        = get_query_embeddings()
+            query_embedding = embedder.embed_query(question)
 
-            where = None
-            if filter_company:
-                where = {"company": {"$contains": filter_company}}
+            # Fetch extra results when filtering (for post-filter headroom)
+            fetch_k = top_k * 4 if filter_company else top_k
 
-            query_embedding = get_query_embeddings().embed_query(question)
-
-            results = self._collection.query(
-                query_embeddings=[query_embedding],
-                n_results=top_k,
-                where=where,
-                include=["documents", "metadatas", "distances"]
+            query_response = self._index.query(
+                vector=query_embedding,
+                top_k=fetch_k,
+                namespace=DEFAULT_NAMESPACE,
+                include_metadata=True,
             )
 
+            # Convert Pinecone matches to LangChain Documents
             documents = []
-            if results.get("documents") and len(results["documents"]) > 0:
-                for i in range(len(results["documents"][0])):
-                    documents.append(
-                        Document(
-                            page_content=results["documents"][0][i],
-                            metadata=results["metadatas"][0][i]
-                        )
-                    )
+            for match in query_response.get("matches", []):
+                metadata = dict(match.get("metadata", {}))
+                content  = metadata.pop("text", "")    # Extract stored text
+
+                documents.append(Document(
+                    page_content=content,
+                    metadata={
+                        **metadata,
+                        "score": round(match.get("score", 0.0), 4),
+                    },
+                ))
+
+            # Post-filter by company (case-insensitive substring match)
+            if filter_company:
+                documents = [
+                    d for d in documents
+                    if filter_company.lower() in
+                       d.metadata.get("company", "").lower()
+                ][:top_k]
 
             logger.info(
-                "Query executed",
+                "Pinecone query complete",
                 extra={
-                    "question_preview": question[:50],
-                    "results_count": len(documents),
-                    "filter_company": filter_company
-                }
+                    "question_preview": question[:60],
+                    "results_found":    len(documents),
+                    "filter_company":   filter_company,
+                    "top_score": documents[0].metadata.get("score") if documents else None,
+                },
             )
 
             return documents
-        except Exception as e:
-            logger.error(f"Query failed: {e}")
+
+        except Exception as exc:
+            logger.error(
+                "Pinecone query failed",
+                extra={"error": str(exc)},
+                exc_info=True,
+            )
             return []
 
     def get_stats(self) -> dict:
-        """Return vector store statistics."""
+        """Returns Pinecone index statistics."""
         try:
             self._initialize()
-            count = self._collection.count()
+            stats = self._index.describe_index_stats()
+
+            namespace_stats = stats.get("namespaces", {}).get(
+                DEFAULT_NAMESPACE, {}
+            )
+
             return {
-                "status": "ready",
-                "vectors": count,
-                "persist_dir": CHROMA_PERSIST_DIR,
-                "collection": COLLECTION_NAME
+                "status":        "ready",
+                "backend":       "pinecone",
+                "index":         settings.pinecone_index_name,
+                "total_vectors": stats.get("total_vector_count", 0),
+                "namespace":     DEFAULT_NAMESPACE,
+                "namespace_vectors": namespace_stats.get("vector_count", 0),
+                "dimension":     EMBEDDING_DIMENSION,
             }
-        except Exception as e:
-            logger.error(f"Failed to get stats: {e}")
-            return {"status": "empty", "vectors": 0}
+
+        except Exception as exc:
+            logger.error(
+                "Failed to get Pinecone stats",
+                extra={"error": str(exc)},
+            )
+            return {"status": "error", "backend": "pinecone", "vectors": 0}
 
 
-# Module-level singleton
-vector_store = ChromaVectorStoreService()
+# --- Module-level singleton ---
+vector_store = PineconeVectorStoreService()

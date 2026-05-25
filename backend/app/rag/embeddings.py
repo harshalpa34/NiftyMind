@@ -14,7 +14,8 @@ def get_embeddings() -> GoogleGenerativeAIEmbeddings:
     return GoogleGenerativeAIEmbeddings(
         model="gemini-embedding-2",
         google_api_key=settings.gemini_api_key,
-        task_type="retrieval_document"
+        task_type="retrieval_document",
+        output_dimensionality=settings.embedding_dimension,
     )
 
 
@@ -29,5 +30,6 @@ def get_query_embeddings() -> GoogleGenerativeAIEmbeddings:
     return GoogleGenerativeAIEmbeddings(
         model="gemini-embedding-2",
         google_api_key=settings.gemini_api_key,
-        task_type="retrieval_query"
+        task_type="retrieval_query",
+        output_dimensionality=settings.embedding_dimension,
     )
