@@ -1,6 +1,6 @@
 import logging
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,110 @@ class BehaviorAnalyzerService:
     OVERTRADING_MAX_TRADES = 5  # Max trades in window
     POSITION_SIZING_MULTIPLIER = 2.0  # 2x average
     CONSECUTIVE_LOSS_THRESHOLD = 3
+    
+    def analyze_portfolio(self, holdings: list[dict], transactions: list[dict]) -> list[dict]:
+        """
+        Analyze portfolio holdings and recent transactions to detect behavioral patterns:
+        - Excessive Concentration (>30% weight)
+        - Overtrading (>5 trades in 30 minutes)
+        - Revenge Trading (quick re-entry with larger sizes after a sale)
+        - FOMO (multiple rapid buy transactions)
+        """
+        flags = []
+        
+        # 1. Detect Excessive Concentration
+        total_val = 0.0
+        pos_values = {}
+        for h in holdings:
+            qty = float(h.get("quantity", 0.0))
+            avg_price = float(h.get("average_buy_price", 0.0))
+            # Resolve mock price if available
+            from app.services.portfolio_risk import MOCK_MARKET_PRICES
+            curr_price = MOCK_MARKET_PRICES.get(h["symbol"].upper(), avg_price)
+            val = qty * curr_price
+            total_val += val
+            pos_values[h["symbol"].upper()] = val
+            
+        if total_val > 0:
+            for symbol, val in pos_values.items():
+                weight = (val / total_val) * 100.0
+                if weight > 30.0:
+                    flags.append({
+                        "flag_type": "EXCESSIVE_CONCENTRATION",
+                        "severity": "HIGH",
+                        "description": f"Excessive concentration: position in '{symbol}' represents {weight:.1f}% of portfolio (recommended threshold: 30.0%).",
+                        "detected_at": datetime.utcnow().isoformat()
+                    })
+
+        # Parse timestamps for transaction analysis
+        parsed_txs = []
+        for tx in transactions:
+            try:
+                ts_raw = tx.get("timestamp")
+                if isinstance(ts_raw, str):
+                    # Strip Z and parse ISO
+                    clean_ts = ts_raw.replace("Z", "+00:00")
+                    ts = datetime.fromisoformat(clean_ts)
+                else:
+                    ts = ts_raw
+                parsed_txs.append({
+                    "symbol": tx["symbol"].upper(),
+                    "qty": float(tx["quantity"]),
+                    "price": float(tx["price"]),
+                    "type": tx["transaction_type"].upper(),
+                    "timestamp": ts,
+                    "value": float(tx["quantity"]) * float(tx["price"])
+                })
+            except Exception as e:
+                logger.debug(f"Failed to parse transaction for behavioral check: {e}")
+
+        # Sort transactions from newest to oldest
+        parsed_txs.sort(key=lambda x: x["timestamp"], reverse=True)
+
+        if not parsed_txs:
+            return flags
+
+        # 2. Detect Overtrading (> 5 transactions in the last 30 minutes)
+        latest_ts = parsed_txs[0]["timestamp"]
+        window_start = latest_ts - timedelta(minutes=30)
+        recent_txs = [t for t in parsed_txs if t["timestamp"] >= window_start]
+        
+        if len(recent_txs) > 5:
+            flags.append({
+                "flag_type": "OVERTRADING",
+                "severity": "MEDIUM",
+                "description": f"Overtrading detected: {len(recent_txs)} transactions executed in the last 30 minutes.",
+                "detected_at": datetime.utcnow().isoformat()
+            })
+
+        # 3. Detect Revenge Trading / FOMO
+        # Look at consecutive transaction pairs
+        for i in range(len(parsed_txs) - 1):
+            tx_new = parsed_txs[i]      # More recent
+            tx_old = parsed_txs[i+1]    # Older
+            
+            time_diff = (tx_new["timestamp"] - tx_old["timestamp"]).total_seconds()
+            
+            # If a BUY follows a SELL within 5 minutes
+            if 0 < time_diff <= 300 and tx_old["type"] == "SELL" and tx_new["type"] == "BUY":
+                # Revenge Trading: Buy value is > 1.5x sell value
+                if tx_new["value"] > tx_old["value"] * 1.5:
+                    flags.append({
+                        "flag_type": "REVENGE_TRADE",
+                        "severity": "HIGH",
+                        "description": f"Potential revenge trading: rapid re-entry for '{tx_new['symbol']}' with {tx_new['value']/tx_old['value']:.1f}x larger transaction size after selling.",
+                        "detected_at": datetime.utcnow().isoformat()
+                    })
+                else:
+                    # FOMO: Quick re-entry
+                    flags.append({
+                        "flag_type": "FOMO",
+                        "severity": "MEDIUM",
+                        "description": f"FOMO warning: quick re-entry buying '{tx_new['symbol']}' within {int(time_diff)} seconds of selling.",
+                        "detected_at": datetime.utcnow().isoformat()
+                    })
+
+        return flags
     
     def analyze(self, trades: list[dict], state: dict) -> list[dict]:
         """

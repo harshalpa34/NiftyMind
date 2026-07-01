@@ -1,0 +1,30 @@
+.tabs-switcher-container {
+  display: flex;
+  background: rgba(17, 24, 39, 0.6);
+  border: 1px solid var(--surface-border);
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.tabs-switcher-btn {
+  flex: 1;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: all 0.2s ease;
+
+  &.active {
+    background: var(--primary-color);
+    color: #fff;
+  }
+
+  &:hover:not(.active) {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.02);
+  }
+}

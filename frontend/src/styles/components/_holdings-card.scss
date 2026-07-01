@@ -1,0 +1,39 @@
+.holdings-empty-state {
+  text-align: center;
+  padding: 40px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.holdings-table-wrapper {
+  overflow-x: auto;
+  max-height: 620px;
+  overflow-y: auto;
+  padding-right: 4px;
+
+  /* Custom scrollbar matching dark premium aesthetics */
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.01);
+    border-radius: 3px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    &:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+  }
+
+  .symbol-cell {
+    font-weight: 700;
+    color: var(--secondary-color);
+  }
+
+  .value-cell {
+    font-weight: 600;
+  }
+}

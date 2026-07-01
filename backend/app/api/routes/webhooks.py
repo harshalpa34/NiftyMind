@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, Header
 from typing import List, Optional, Annotated
 import logging
-from app.models.market_event import (
+from app.analytics.fno.models.market_event import (
     MarketEvent, 
     MarketEventCreate, 
     WebhookPayload,

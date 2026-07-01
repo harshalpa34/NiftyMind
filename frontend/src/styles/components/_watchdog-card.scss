@@ -1,0 +1,313 @@
+.watchdog-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-height: 620px;
+  overflow-y: auto;
+  padding-right: 8px;
+
+  /* Custom scrollbar matching dark premium aesthetics */
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.01);
+    border-radius: 3px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    &:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+  }
+}
+
+.watchdog-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  .refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--surface-border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    cursor: pointer;
+    opacity: 1;
+    transition: all 0.2s;
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+
+    &:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.08);
+    }
+  }
+
+  .health-score-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    
+    .label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+    }
+
+    .score {
+      font-weight: 800;
+      font-size: 1.1rem;
+
+      &.high {
+        color: var(--alert-success);
+      }
+      &.medium {
+        color: #f59e0b;
+      }
+      &.low {
+        color: var(--alert-error);
+      }
+    }
+  }
+}
+
+.watchdog-summary-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid var(--surface-border);
+  padding: 16px;
+  borderRadius: 8px;
+
+  .stat-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+
+  .stat-value {
+    font-weight: 700;
+    font-size: 1.1rem;
+
+    &.positive {
+      color: var(--alert-success);
+    }
+    &.negative {
+      color: var(--alert-error);
+    }
+    &.neutral {
+      color: var(--text-secondary);
+    }
+  }
+}
+
+.watchdog-holdings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.watchdog-stock-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  padding: 20px;
+
+  .stock-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+
+    .symbol {
+      font-weight: 800;
+      font-size: 1.2rem;
+      color: var(--secondary-color);
+      margin-right: 10px;
+    }
+
+    .badge-sentiment {
+      font-size: 0.75rem;
+      padding: 3px 8px;
+    }
+
+    .holdings-meta {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    .right-info {
+      text-align: right;
+
+      .badge-risk {
+        font-size: 0.75rem;
+        padding: 4px 10px;
+
+        &.caution {
+          background: rgba(245, 158, 11, 0.15);
+          color: #f59e0b;
+        }
+      }
+
+      .stop-loss {
+        font-weight: 700;
+        font-size: 0.85rem;
+        margin-top: 6px;
+        color: var(--text-primary);
+      }
+    }
+  }
+
+  .recommendation-text {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .quarterly-targets-panel {
+    background: rgba(255, 255, 255, 0.01);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+
+    .targets-header {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .targets-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 10px;
+      text-align: center;
+      position: relative;
+
+      .target-box {
+        background: rgba(255, 255, 255, 0.02);
+        padding: 8px;
+        border-radius: 6px;
+
+        .q-label {
+          font-size: 0.68rem;
+          color: var(--text-secondary);
+        }
+
+        .q-val {
+          font-weight: 800;
+          font-size: 0.95rem;
+
+          &.q1 { color: #a5b4fc; }
+          &.q2 { color: #818cf8; }
+          &.q3 { color: #6365f1; }
+          &.q4 { color: #4f46e5; }
+        }
+      }
+    }
+
+    .rationale-text {
+      margin: 8px 0 0;
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+      font-style: italic;
+      line-height: 1.4;
+    }
+  }
+
+  .news-accordion-btn {
+    background: none;
+    border: none;
+    color: var(--primary-color);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+  }
+
+  .news-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+
+    .news-empty {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+    }
+
+    .news-item-card {
+      background: rgba(255, 255, 255, 0.01);
+      border: 1px solid var(--surface-border);
+      padding: 12px 14px;
+      border-radius: 8px;
+
+      .news-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+
+        .news-title {
+          font-weight: 700;
+          font-size: 0.85rem;
+          color: var(--text-primary);
+          text-decoration: none;
+
+          &:hover {
+            color: var(--primary-color);
+          }
+        }
+
+        .sentiment-badge {
+          font-size: 0.68rem;
+          padding: 2px 6px;
+        }
+      }
+
+      .news-meta {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        margin-top: 4px;
+      }
+
+      .news-summary {
+        margin: 8px 0 0;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        line-height: 1.4;
+      }
+
+      .news-effect {
+        font-size: 0.76rem;
+        margin-top: 4px;
+
+        &.positive { color: #a7f3d0; }
+        &.negative { color: #fca5a5; }
+      }
+    }
+  }
+}

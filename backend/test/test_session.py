@@ -15,10 +15,55 @@ def pretty(label, data):
 def check(resp, label):
     """Check response status and return JSON"""
     if resp.status_code not in (200, 201):
-        print(f"❌ ERROR: {label} returned {resp.status_code}")
+        print(f"[ERROR] {label} returned {resp.status_code}")
         print(f"Response: {resp.text}")
         exit(1)
     return resp.json()
+
+
+# Authentication setup
+def get_auth_headers():
+    import uuid
+    # Use a unique email per test run so registration always succeeds
+    unique_id = uuid.uuid4().hex[:8]
+    email = f"testuser_{unique_id}@niftymind.com"
+    password = "password123"
+    
+    # 1. Try to register
+    r = httpx.post(
+        f"{BASE}/auth/register",
+        json={
+            "email": email,
+            "password": password,
+            "full_name": "Test User"
+        }
+    )
+    print(f"Register status: {r.status_code}, Response: {r.text}")
+    if r.status_code == 201:
+        data = r.json()
+        return {"Authorization": f"Bearer {data['access_token']}"}
+        
+    # 2. Fallback to login in case of registration issues (using a generic email)
+    r = httpx.post(
+        f"{BASE}/auth/login",
+        json={
+            "email": "testuser@niftymind.com",
+            "password": password
+        }
+    )
+    if r.status_code == 200:
+        data = r.json()
+        return {"Authorization": f"Bearer {data['access_token']}"}
+        
+    print("[ERROR] Authentication failed.")
+    print(r.text)
+    exit(1)
+
+
+# Acquire auth headers
+print("\nAuthenticating...")
+headers = get_auth_headers()
+print("Authentication successful!")
 
 
 # STEP 1 — Create session
@@ -26,7 +71,7 @@ print("\n" + "="*50)
 print("  STEP 1 - CREATE SESSION")
 print("="*50)
 
-r = httpx.post(f"{BASE}/sessions?user_id=harshal")
+r = httpx.post(f"{BASE}/sessions", headers=headers)
 session = check(r, "Create session")
 session_id = session["session_id"]
 pretty("SESSION CREATED", session)
@@ -42,6 +87,7 @@ for i in range(1, 4):
     # Open trade
     r = httpx.post(
         f"{BASE}/sessions/{session_id}/trades",
+        headers=headers,
         json={
             "symbol": "NIFTY",
             "direction": "LONG",
@@ -57,7 +103,7 @@ for i in range(1, 4):
     # Extract trade_id from open_trade_ids
     open_trade_ids = trade_data.get("open_trade_ids", [])
     if not open_trade_ids:
-        print(f"❌ ERROR: No open_trade_ids in response for trade {i}")
+        print(f"[ERROR] No open_trade_ids in response for trade {i}")
         exit(1)
     
     trade_id = open_trade_ids[-1]  # Last item
@@ -66,6 +112,7 @@ for i in range(1, 4):
     # Close trade at loss
     r = httpx.post(
         f"{BASE}/sessions/{session_id}/trades/close",
+        headers=headers,
         json={
             "trade_id": trade_id,
             "exit_price": 24300  # Loss — exit below entry for LONG
@@ -88,7 +135,7 @@ print("\n" + "="*50)
 print("  STEP 3 - GET FINAL SESSION STATE")
 print("="*50)
 
-r = httpx.get(f"{BASE}/sessions/{session_id}")
+r = httpx.get(f"{BASE}/sessions/{session_id}", headers=headers)
 final_state = check(r, "Get final session state")
 
 pretty("FINAL SESSION STATE", {
@@ -119,12 +166,12 @@ checks = [
 ]
 
 for check_name, passed in checks:
-    emoji = "✅" if passed else "❌"
-    print(f"{emoji} {check_name}")
+    status_str = "[PASS]" if passed else "[FAIL]"
+    print(f"{status_str} {check_name}")
 
 all_passed = all(passed for _, passed in checks)
 if all_passed:
-    print("\n🎉 All checks passed!")
+    print("\nAll checks passed!")
 else:
-    print("\n⚠️  Some checks failed!")
+    print("\nSome checks failed!")
     exit(1)

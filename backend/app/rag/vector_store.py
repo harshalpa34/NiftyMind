@@ -69,7 +69,7 @@ class PineconeVectorStoreService:
             },
         )
 
-    def ingest(self, chunks: list[Document]) -> int:
+    def ingest(self, chunks: list[Document], namespace: str = DEFAULT_NAMESPACE) -> int:
         """
         Embeds and upserts document chunks into Pinecone.
 
@@ -77,23 +77,36 @@ class PineconeVectorStoreService:
         updates it rather than creating a duplicate. Safe to run multiple times.
 
         Batches in groups of 100 — Pinecone's recommended batch size.
+        
+        Args:
+            chunks: List of Document chunks to ingest
+            namespace: Pinecone namespace (default: DEFAULT_NAMESPACE)
         """
         if not chunks:
-            logger.warning("No chunks to ingest")
+            logger.warning("No chunks to ingest", extra={"namespace": namespace})
             return 0
 
         self._initialize()
 
         logger.info(
             "Starting Pinecone ingestion",
-            extra={"chunks": len(chunks), "namespace": DEFAULT_NAMESPACE},
+            extra={"chunks": len(chunks), "namespace": namespace},
         )
 
-        # Generate embeddings for all chunks
-        embedder    = get_embeddings()
-        texts       = [c.page_content for c in chunks]
-        embeddings  = embedder.embed_documents(texts)
-
+        embedder   = get_embeddings()
+        texts      = [c.page_content for c in chunks]
+        embeddings = []
+        for i, text in enumerate(texts):
+            emb = embedder.embed_documents([text])
+            embeddings.append(emb[0])
+            logger.debug(
+                "Chunk embedded",
+                extra={"chunk": i + 1, "total": len(texts)},
+            )
+        logger.info(
+            "All embeddings generated",
+            extra={"count": len(embeddings)},
+        )
         # Build Pinecone vector records
         vectors = []
         for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
@@ -122,19 +135,19 @@ class PineconeVectorStoreService:
             batch = vectors[i: i + batch_size]
             self._index.upsert(
                 vectors=batch,
-                namespace=DEFAULT_NAMESPACE,
+                namespace=namespace,
             )
             total_upserted += len(batch)
             logger.debug(
                 "Batch upserted",
-                extra={"batch": i // batch_size + 1, "vectors": len(batch)},
+                extra={"batch": i // batch_size + 1, "vectors": len(batch), "namespace": namespace},
             )
 
         logger.info(
             "Pinecone ingestion complete",
             extra={
                 "vectors_upserted": total_upserted,
-                "namespace": DEFAULT_NAMESPACE,
+                "namespace": namespace,
             },
         )
 
@@ -145,6 +158,7 @@ class PineconeVectorStoreService:
         question: str,
         top_k: int = 4,
         filter_company: Optional[str] = None,
+        namespace: str = DEFAULT_NAMESPACE,
     ) -> list[Document]:
         """
         Semantic similarity search over Pinecone index.
@@ -155,6 +169,12 @@ class PineconeVectorStoreService:
         Company filtering: Pinecone supports exact metadata filters.
         For partial match (e.g. "TCS" matching "Tata Consultancy Services"),
         we fetch extra results and post-filter in Python.
+        
+        Args:
+            question: Query question
+            top_k: Number of top results (default: 4)
+            filter_company: Optional company filter (default: None)
+            namespace: Pinecone namespace (default: DEFAULT_NAMESPACE)
         """
         self._initialize()
 
@@ -169,7 +189,7 @@ class PineconeVectorStoreService:
             query_response = self._index.query(
                 vector=query_embedding,
                 top_k=fetch_k,
-                namespace=DEFAULT_NAMESPACE,
+                namespace=namespace,
                 include_metadata=True,
             )
 
@@ -201,6 +221,7 @@ class PineconeVectorStoreService:
                     "question_preview": question[:60],
                     "results_found":    len(documents),
                     "filter_company":   filter_company,
+                    "namespace":        namespace,
                     "top_score": documents[0].metadata.get("score") if documents else None,
                 },
             )
@@ -210,19 +231,23 @@ class PineconeVectorStoreService:
         except Exception as exc:
             logger.error(
                 "Pinecone query failed",
-                extra={"error": str(exc)},
+                extra={"error": str(exc), "namespace": namespace},
                 exc_info=True,
             )
             return []
 
-    def get_stats(self) -> dict:
-        """Returns Pinecone index statistics."""
+    def get_stats(self, namespace: str = DEFAULT_NAMESPACE) -> dict:
+        """Returns Pinecone index statistics for a given namespace.
+        
+        Args:
+            namespace: Pinecone namespace (default: DEFAULT_NAMESPACE)
+        """
         try:
             self._initialize()
             stats = self._index.describe_index_stats()
 
             namespace_stats = stats.get("namespaces", {}).get(
-                DEFAULT_NAMESPACE, {}
+                namespace, {}
             )
 
             return {
@@ -230,7 +255,7 @@ class PineconeVectorStoreService:
                 "backend":       "pinecone",
                 "index":         settings.pinecone_index_name,
                 "total_vectors": stats.get("total_vector_count", 0),
-                "namespace":     DEFAULT_NAMESPACE,
+                "namespace":     namespace,
                 "namespace_vectors": namespace_stats.get("vector_count", 0),
                 "dimension":     EMBEDDING_DIMENSION,
             }
@@ -238,7 +263,7 @@ class PineconeVectorStoreService:
         except Exception as exc:
             logger.error(
                 "Failed to get Pinecone stats",
-                extra={"error": str(exc)},
+                extra={"error": str(exc), "namespace": namespace},
             )
             return {"status": "error", "backend": "pinecone", "vectors": 0}
 

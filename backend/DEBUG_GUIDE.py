@@ -76,7 +76,7 @@ print("""
 
 5. Different singleton IDs
    → Both imports not from same module
-   → Check line: from app.websockets.connection_manager import connection_manager
+   → Check line: from app.analytics.fno.websockets.connection_manager import connection_manager
 """)
 
 print("=" * 70)

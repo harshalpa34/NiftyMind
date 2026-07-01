@@ -1,11 +1,14 @@
 import logging
 from typing import Optional
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.auth.dependencies import CurrentUser
 from app.rag.document_loader import load_transcripts, chunk_documents
 from app.rag.vector_store import vector_store
+from app.rag.corrective_rag import corrective_rag
 
 
 logger = logging.getLogger(__name__)
@@ -40,6 +43,18 @@ class RAGQueryRequest(BaseModel):
     filter_company: Optional[str] = Field(None, description="Optional company filter")
 
 
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=5, description="Question for the corrective RAG pipeline")
+    top_k: int = Field(4, ge=1, le=10, description="Number of top vector results")
+    confidence_threshold: float = Field(
+        0.75,
+        ge=0.0,
+        le=1.0,
+        description="Confidence threshold for vector-only retrieval",
+    )
+    filter_company: Optional[str] = Field(None, description="Optional company filter")
+
+
 class RAGChunk(BaseModel):
     """Single result chunk from RAG query."""
     content: str
@@ -62,12 +77,16 @@ class RAGQueryResponse(BaseModel):
 # ============================================================================
 
 @router.post("/ingest", response_model=IngestResponse, status_code=201)
-async def ingest_documents(request: IngestRequest) -> IngestResponse:
+async def ingest_documents(
+    request: IngestRequest,
+    current_user: Annotated[CurrentUser, Depends()],
+) -> IngestResponse:
     """
-    Load and ingest transcript documents into the vector store.
+    Load and ingest transcript documents into the vector store (user-scoped namespace).
     
     Args:
         request: IngestRequest with directory path
+        current_user: Current authenticated user
     
     Returns:
         IngestResponse with ingestion statistics
@@ -75,6 +94,14 @@ async def ingest_documents(request: IngestRequest) -> IngestResponse:
     Raises:
         HTTPException 404: If no documents found
     """
+    user_id = str(current_user.id)
+    namespace = f"user_{user_id}"
+    
+    logger.info(
+        "Starting document ingestion",
+        extra={"user_id": user_id, "namespace": namespace, "directory": request.directory}
+    )
+    
     try:
         # Load transcripts from specified directory
         documents = load_transcripts(directory=request.directory)
@@ -94,14 +121,19 @@ async def ingest_documents(request: IngestRequest) -> IngestResponse:
                 detail="Failed to chunk documents"
             )
         
-        # Ingest into vector store
-        chunks_ingested = vector_store.ingest(chunks)
+        # Ingest into vector store with user namespace
+        chunks_ingested = vector_store.ingest(chunks, namespace=namespace)
         
         if chunks_ingested == 0:
             raise HTTPException(
                 status_code=500,
                 detail="Failed to ingest documents into vector store"
             )
+        
+        logger.info(
+            "Document ingestion complete",
+            extra={"user_id": user_id, "chunks_ingested": chunks_ingested, "documents": len(documents)}
+        )
         
         return IngestResponse(
             status="success",
@@ -112,7 +144,7 @@ async def ingest_documents(request: IngestRequest) -> IngestResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Ingestion failed: {e}")
+        logger.error(f"Ingestion failed: {e}", extra={"user_id": user_id}, exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Ingestion failed: {str(e)}"
@@ -120,22 +152,40 @@ async def ingest_documents(request: IngestRequest) -> IngestResponse:
 
 
 @router.post("/query", response_model=RAGQueryResponse)
-async def query_documents(request: RAGQueryRequest) -> RAGQueryResponse:
+async def query_documents(
+    request: RAGQueryRequest,
+    current_user: Annotated[CurrentUser, Depends()],
+) -> RAGQueryResponse:
     """
-    Query the vector store for relevant documents.
+    Query the vector store for relevant documents (user-scoped namespace).
     
     Args:
         request: RAG query request
+        current_user: Current authenticated user
         
     Returns:
         RAGQueryResponse with search results
     """
+    user_id = str(current_user.id)
+    namespace = f"user_{user_id}"
+    
+    logger.info(
+        "RAG query received",
+        extra={
+            "user_id": user_id,
+            "namespace": namespace,
+            "question_preview": request.question[:60],
+            "top_k": request.top_k,
+        }
+    )
+    
     try:
-        # Query the vector store
+        # Query the vector store with user namespace
         results = vector_store.query(
             question=request.question,
             top_k=request.top_k,
-            filter_company=request.filter_company
+            filter_company=request.filter_company,
+            namespace=namespace
         )
         
         # Map results to RAGChunk objects
@@ -151,8 +201,13 @@ async def query_documents(request: RAGQueryRequest) -> RAGQueryResponse:
                 )
             )
         
-        # Get vector store stats
-        stats = vector_store.get_stats()
+        # Get vector store stats for user namespace
+        stats = vector_store.get_stats(namespace=namespace)
+        
+        logger.info(
+            "RAG query complete",
+            extra={"user_id": user_id, "results_found": len(chunks)}
+        )
         
         return RAGQueryResponse(
             question=request.question,
@@ -161,19 +216,70 @@ async def query_documents(request: RAGQueryRequest) -> RAGQueryResponse:
             vector_stats=stats
         )
     except Exception as e:
-        logger.error(f"Query failed: {e}")
+        logger.error(f"Query failed: {e}", extra={"user_id": user_id}, exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Query failed: {str(e)}"
         )
 
 
-@router.get("/stats")
-async def get_stats() -> dict:
+@router.post("/ask", tags=["Corporate Actions RAG"])
+async def ask_question(
+    request: AskRequest,
+    current_user: Annotated[CurrentUser, Depends()],
+) -> dict:
     """
-    Get statistics about the vector store.
+    Ask the corrective RAG pipeline for a contextual answer (user-scoped).
+    """
+    user_id = str(current_user.id)
+    user_email = current_user.email
+    namespace = f"user_{user_id}"
+    
+    logger.info(
+        "Corrective RAG ask request received",
+        extra={
+            "user_id": user_id,
+            "user_email": user_email,
+            "namespace": namespace,
+            "question_preview": request.question[:80],
+            "top_k": request.top_k,
+            "confidence_threshold": request.confidence_threshold,
+            "filter_company": request.filter_company,
+        },
+    )
+    
+    result = await corrective_rag.ask(
+        question=request.question,
+        top_k=request.top_k,
+        confidence_threshold=request.confidence_threshold,
+        filter_company=request.filter_company,
+    )
+    
+    # Add requested_by metadata
+    result["requested_by"] = user_email
+    
+    return result
+
+
+@router.get("/stats")
+async def get_stats(
+    current_user: Annotated[CurrentUser, Depends()],
+) -> dict:
+    """
+    Get statistics about the vector store for current user.
+    
+    Args:
+        current_user: Current authenticated user
     
     Returns:
-        Dictionary with vector store status and metadata
+        Dictionary with vector store status and metadata for user namespace
     """
-    return vector_store.get_stats()
+    user_id = str(current_user.id)
+    namespace = f"user_{user_id}"
+    
+    logger.info(
+        "Vector store stats requested",
+        extra={"user_id": user_id, "namespace": namespace}
+    )
+    
+    return vector_store.get_stats(namespace=namespace)
