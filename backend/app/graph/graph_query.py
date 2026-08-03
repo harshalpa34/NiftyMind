@@ -91,6 +91,48 @@ class GraphQueryService:
         # default
         return self.get_corporate_actions()
 
+    def get_portfolio_dependencies(self, symbols: List[str]) -> List[Dict[str, Any]]:
+        """
+        Retrieves all graph connections (Sectors, Competitors, Clients, Vendors)
+        for a list of portfolio company tickers. Returns a unified edge list.
+        """
+        if not symbols:
+            return []
+        
+        symbols_upper = [s.strip().upper() for s in symbols if s]
+        
+        cypher = """
+        // 1. Sector connections
+        MATCH (c:Company)-[r:BELONGS_TO]->(s:Sector)
+        WHERE c.ticker IN $symbols
+        RETURN c.ticker as source, s.name as target, "BELONGS_TO" as type, {} as properties
+        
+        UNION
+        
+        // 2. Competitor connections
+        MATCH (c:Company)-[r:COMPETES_WITH]->(other:Company)
+        WHERE c.ticker IN $symbols
+        RETURN c.ticker as source, other.ticker as target, "COMPETES_WITH" as type, {} as properties
+        
+        UNION
+        
+        // 3. Client connections (Company is the vendor)
+        MATCH (c:Company)-[r:VENDOR_OF]->(other:Company)
+        WHERE c.ticker IN $symbols
+        RETURN c.ticker as source, other.ticker as target, "VENDOR_OF" as type, 
+               {category: coalesce(r.category, 'General Services'), reliance: coalesce(r.reliance, 'MEDIUM')} as properties
+               
+        UNION
+        
+        // 4. Vendor connections (Company is the client)
+        MATCH (other:Company)-[r:VENDOR_OF]->(c:Company)
+        WHERE c.ticker IN $symbols
+        RETURN other.ticker as source, c.ticker as target, "VENDOR_OF" as type, 
+               {category: coalesce(r.category, 'General Services'), reliance: coalesce(r.reliance, 'MEDIUM')} as properties
+        """
+        return neo4j_client.run_query(cypher, {"symbols": symbols_upper})
+
 
 # module-level singleton
 graph_query = GraphQueryService()
+

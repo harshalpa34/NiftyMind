@@ -238,3 +238,56 @@ async def graph_stats(
             exc_info=True
         )
         raise HTTPException(status_code=500, detail=str(e))
+
+
+import uuid
+from app.db.session import get_raw_db
+from app.db.crud.portfolio import get_portfolio, get_holdings
+
+@router.get("/graph/portfolio/{portfolio_id}/dependencies")
+async def get_portfolio_dependencies_route(
+    portfolio_id: uuid.UUID,
+    current_user: CurrentUser,
+    conn: asyncpg.Connection = Depends(get_raw_db)
+) -> List[Dict[str, Any]]:
+    """
+    Get all sector, competitor, vendor, and client connections 
+    for all stocks in the specified portfolio.
+    """
+    user_id = str(current_user.id)
+    logger.info(
+        "Portfolio dependencies query requested",
+        extra={"user_id": user_id, "portfolio_id": str(portfolio_id)}
+    )
+    
+    # 1. Verify portfolio ownership
+    portfolio = await get_portfolio(conn, portfolio_id, current_user.id)
+    if not portfolio:
+        raise HTTPException(
+            status_code=404,
+            detail="Portfolio not found or access denied."
+        )
+        
+    # 2. Get active holdings
+    holdings = await get_holdings(conn, portfolio_id)
+    if not holdings:
+        return []
+        
+    symbols = [h["symbol"].upper() for h in holdings]
+    
+    try:
+        # 3. Retrieve relationship list from Neo4j
+        results = graph_query.get_portfolio_dependencies(symbols)
+        logger.info(
+            "Portfolio dependencies retrieved",
+            extra={"user_id": user_id, "portfolio_id": str(portfolio_id), "count": len(results)}
+        )
+        return results
+    except Exception as e:
+        logger.error(
+            "Portfolio dependencies query failed",
+            extra={"user_id": user_id, "portfolio_id": str(portfolio_id), "error": str(e)},
+            exc_info=True
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+

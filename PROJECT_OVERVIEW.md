@@ -123,3 +123,15 @@ NiftyMind/
 | Transcript vectors | Pinecone |
 | Corporate sectors/relationships | Neo4j |
 | Market events | In-memory dictionary |
+
+---
+
+## Future Scalability Plans (Stateless Transition)
+
+To scale the platform in stateless cloud environments (e.g., AWS ECS/EKS, Kubernetes), the following database transitions are planned:
+
+1. **Stateless Transcripts Syncing**:
+   - Replace the current local filesystem caching in the sync script (`os.path.exists`) with a PostgreSQL sync-tracking table (`synced_transcripts`) to check for already-loaded stock quarters.
+   - Alternatively, query the Pinecone index metadata directly at runtime using a filter query `{"company": symbol, "quarter": quarter}` to determine if the document chunks are already indexed.
+2. **Centralized Object Storage**:
+   - Store the raw `.txt` or `.pdf` transcripts in a central cloud object storage bucket (e.g., AWS S3 or Google Cloud Storage) instead of saving them to local disks, ensuring all stateless containers share access to the raw files.

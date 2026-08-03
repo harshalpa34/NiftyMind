@@ -74,8 +74,20 @@ async def init_pg_pool():
     try:
         pg_pool = await asyncpg.create_pool(pg_url, min_size=1, max_size=3)
         logger.info("✓ Raw asyncpg PostgreSQL connection pool initialized")
+        
+        # Create cache registry table if not exists
+        async with pg_pool.acquire() as conn:
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS gemini_cache_registry (
+                    id SERIAL PRIMARY KEY,
+                    cache_key VARCHAR(255) UNIQUE NOT NULL,
+                    google_cache_name VARCHAR(255) NOT NULL,
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+                );
+            """)
+            logger.info("✓ Gemini cache registry table verified/created")
     except Exception as exc:
-        logger.warning(f"Could not connect raw pg_pool: {exc} (Application will start, but database endpoints will be unavailable).")
+        logger.warning(f"Could not connect raw pg_pool or setup gemini_cache_registry: {exc} (Application will start, but database endpoints will be unavailable).")
 
 
 async def close_pg_pool():

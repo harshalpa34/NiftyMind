@@ -16,7 +16,7 @@ class BehaviorAnalyzerService:
     POSITION_SIZING_MULTIPLIER = 2.0  # 2x average
     CONSECUTIVE_LOSS_THRESHOLD = 3
     
-    def analyze_portfolio(self, holdings: list[dict], transactions: list[dict]) -> list[dict]:
+    def analyze_portfolio(self, holdings: list[dict], transactions: list[dict], price_map: dict = None) -> list[dict]:
         """
         Analyze portfolio holdings and recent transactions to detect behavioral patterns:
         - Excessive Concentration (>30% weight)
@@ -32,9 +32,13 @@ class BehaviorAnalyzerService:
         for h in holdings:
             qty = float(h.get("quantity", 0.0))
             avg_price = float(h.get("average_buy_price", 0.0))
-            # Resolve mock price if available
-            from app.services.portfolio_risk import MOCK_MARKET_PRICES
-            curr_price = MOCK_MARKET_PRICES.get(h["symbol"].upper(), avg_price)
+            # Resolve price using price_map if available
+            curr_price = avg_price
+            if price_map:
+                curr_price = price_map.get(h["symbol"].upper(), avg_price)
+            else:
+                from app.services.portfolio_risk import MOCK_MARKET_PRICES
+                curr_price = MOCK_MARKET_PRICES.get(h["symbol"].upper(), avg_price)
             val = qty * curr_price
             total_val += val
             pos_values[h["symbol"].upper()] = val

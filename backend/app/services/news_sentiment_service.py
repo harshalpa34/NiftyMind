@@ -183,7 +183,7 @@ class NewsSentimentService:
         news_context = "\n".join(news_summary_list) if news_summary_list else "No recent news available."
 
         prompt = f"""
-        You are an advanced SEBI-compliant AI Portfolio advisor. Calculate stop loss and expected target prices for holding '{symbol.upper()}'.
+        You are an advanced AI Portfolio advisor. Calculate stop loss and expected target prices for holding '{symbol.upper()}'.
         
         HOLDING DATA:
         - Symbol: {symbol.upper()}
@@ -200,7 +200,7 @@ class NewsSentimentService:
         1. Suggest a realistic educational Stop Loss.
         2. Set a Risk Signal ('HOLD', 'WATCH', 'CAUTION', 'EXIT').
         3. Project realistic expected target prices for the next 4 quarters (Q1 = 3m, Q2 = 6m, Q3 = 9m, Q4 = 12m) from the current price, grounding these in the news sentiment and guided margins.
-        4. Explain your suggestions in detail in plain English reasoning and target rationales. Keep the tone factual, educational, and SEBI-compliant (no direct trade actions or rebalance commands).
+        4. Explain your suggestions in detail in plain English reasoning and target rationales. Provide clear, direct trade recommendations (buy, sell, hold, exit, reallocate) based on these insights.
         """
 
         try:
@@ -272,7 +272,7 @@ class NewsSentimentService:
         holdings_context = "\n\n".join(formatted_holdings)
 
         prompt = f"""
-        You are an advanced SEBI-compliant AI Portfolio advisor.
+        You are an advanced AI Portfolio advisor.
         Generate stop-loss values, risk signals, and quarterly targets for the following active stock holdings.
         
         CURRENT DATE: {current_date_str}
@@ -291,7 +291,7 @@ class NewsSentimentService:
            - The list of output suggestions MUST contain exactly the input symbols.
            - Each object in the suggestions list MUST match one of the input symbols: {input_symbols}.
         3. risk_signal must be exactly: 'HOLD', 'WATCH', 'CAUTION', or 'EXIT'.
-        4. Explain suggestions in plain English reasoning and target rationales. Keep the tone factual and educational.
+        4. Explain suggestions in plain English reasoning and target rationales. Provide clear, direct trade recommendations (buy, sell, hold, exit, reallocate) based on these insights.
         """
 
         try:

@@ -95,14 +95,21 @@ class PineconeVectorStoreService:
 
         embedder   = get_embeddings()
         texts      = [c.page_content for c in chunks]
-        embeddings = []
-        for i, text in enumerate(texts):
-            emb = embedder.embed_documents([text])
-            embeddings.append(emb[0])
-            logger.debug(
-                "Chunk embedded",
-                extra={"chunk": i + 1, "total": len(texts)},
-            )
+        
+        # Batch generate embeddings to reduce network roundtrips and avoid connection resets
+        try:
+            embeddings = embedder.embed_documents(texts)
+        except Exception as e:
+            logger.warning(f"Failed to generate batch embeddings: {e}. Retrying one-by-one...")
+            embeddings = []
+            for i, text in enumerate(texts):
+                try:
+                    emb = embedder.embed_documents([text])
+                    embeddings.append(emb[0])
+                except Exception as inner_e:
+                    logger.error(f"Failed to embed chunk {i+1}/{len(texts)}: {inner_e}")
+                    raise
+                
         logger.info(
             "All embeddings generated",
             extra={"count": len(embeddings)},

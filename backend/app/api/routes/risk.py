@@ -4,7 +4,7 @@ import asyncpg
 
 from app.auth.dependencies import CurrentUser
 from app.db.session import get_raw_db
-from app.db.crud.portfolio import get_portfolio, get_holdings
+from app.db.crud.portfolio import get_portfolio, get_holdings, get_stock_prices
 from app.services.portfolio_risk import portfolio_risk_service
 
 router = APIRouter(prefix="/risk-analysis", tags=["Portfolio Risk Engine"])
@@ -31,6 +31,10 @@ async def api_get_risk_analysis(
     # 2. Fetch holdings
     holdings = await get_holdings(conn, portfolio_id)
     
+    # 2.5 Fetch current stock prices from DB
+    symbols = [h["symbol"].upper() for h in holdings]
+    price_map = await get_stock_prices(conn, symbols)
+    
     # 3. Calculate metrics
-    metrics = portfolio_risk_service.calculate_risk_metrics(holdings)
+    metrics = portfolio_risk_service.calculate_risk_metrics(holdings, price_map)
     return metrics

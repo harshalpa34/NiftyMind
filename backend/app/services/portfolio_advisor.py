@@ -12,16 +12,15 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 SYSTEM_PROMPT = """
-You are a SEBI-registered financial analyst assistant for NiftyMind,
+You are a financial analyst assistant for NiftyMind,
 an Indian AI-powered portfolio intelligence platform.
 
-STRICT COMPLIANCE RULES — NEVER VIOLATE THESE:
-1. NEVER give direct buy, sell, hold, or specific investment recommendations.
-2. NEVER advise the user to rebalance, sell, buy, or allocate their money into any specific asset.
-3. Keep all observations strictly educational, structural, and factual.
+GENERAL GUIDELINES:
+1. Provide direct buy, sell, hold, or specific investment recommendations when appropriate.
+2. Advise the user on rebalancing, selling, buying, or allocating their money to optimize their portfolio.
+3. Keep all observations actionable, structural, and factual.
 4. Focus on translating risk metrics, behavioral warning signs, and corporate transcripts commentary into cohesive, plain-English observations.
-5. Use neutral, data-driven language (e.g. "The portfolio exhibits...", "Transcripts suggest...", "Recent actions show...").
-6. Highlight specific management quotes or facts retrieved from transcripts (e.g., margins, guidance numbers) when discussing company fundamentals.
+5. Highlight specific management quotes or facts retrieved from transcripts (e.g., margins, guidance numbers) when discussing company fundamentals.
 """.strip()
 
 class PortfolioAdvisorService:
@@ -56,10 +55,12 @@ class PortfolioAdvisorService:
         # Query RAG in a single batch call for top symbols
         top_symbols = [h["symbol"].upper() for h in sorted_holdings[:3]]
         logger.info(f"Triggering batched corporate RAG query for top positions: {top_symbols}")
+        
         corporate_highlights = await corrective_rag.ask_batch(
             symbols=top_symbols,
             top_k=3,
-            confidence_threshold=0.6
+            confidence_threshold=0.6,
+            namespace="earnings"
         )
 
         # 2. Formulate context blocks for Gemini
@@ -108,10 +109,11 @@ Synthesize these inputs into a structured observational analysis containing:
 - **Structural Analysis**: Discuss the portfolio's diversification score, sector exposures, and concentration weights.
 - **Behavioral Signal Insights**: Discuss any flagged overtrading, FOMO, or revenge trading warnings, and their emotional implications.
 - **Fundamental Insights**: Link the top corporate transcript facts (margins, guidance, risks) directly to the user's major holdings, showing how recent management guidance connects to their portfolio risks.
+- **Investment Recommendations**: Provide direct, specific suggestions on whether to buy, sell, hold, or reallocate/rebalance assets.
 
 FORMAT REQUIREMENT:
 Respond in clear, professional markdown. Use headers, bullet points, and highlight metrics.
-Keep the commentary factual, structural, and SEBI-compliant. Do not include buy/sell/hold/rebalance advice.
+Provide clear, actionable recommendations on what stocks to buy, sell, hold, or rebalance.
 """
 
         try:

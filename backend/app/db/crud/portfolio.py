@@ -1,7 +1,9 @@
 import uuid
 import logging
+import asyncio
 from typing import Optional, List, Dict, Any
 import asyncpg
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -370,6 +372,108 @@ async def get_portfolio_news_feed(
     
     rows = await conn.fetch(query, *params)
     return [dict(row) for row in rows]
+
+
+async def _resolve_yahoo_symbol_internal(client: httpx.AsyncClient, db_symbol: str) -> str:
+    """Dynamically resolve the Yahoo Finance symbol using its search API."""
+    cleaned = db_symbol.strip().upper()
+    
+    # If it's already a short string with no spaces, it is likely already a ticker (e.g. INFY, TCS)
+    if len(cleaned) <= 10 and " " not in cleaned:
+        return cleaned
+
+    # Query Yahoo Finance Search API
+    url = f"https://query1.finance.yahoo.com/v1/finance/search?q={cleaned}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    
+    try:
+        response = await client.get(url, headers=headers, timeout=5.0)
+        if response.status_code == 200:
+            quotes = response.json().get("quotes", [])
+            for q in quotes:
+                symbol = q.get("symbol", "")
+                # Keep the full resolved symbol with suffix so BO or NS are retained correctly
+                if symbol.endswith(".NS") or symbol.endswith(".BO"):
+                    logger.info(f"Resolved symbol '{db_symbol}' to ticker '{symbol}' via Yahoo Search API")
+                    return symbol
+    except Exception as e:
+        logger.warning(f"Failed to dynamically search ticker for '{db_symbol}': {e}")
+        
+    return cleaned
+
+async def _fetch_stock_price_internal(client: httpx.AsyncClient, db_symbol: str) -> Optional[float]:
+    """Fetch current price from Yahoo Finance API."""
+    yahoo_ticker = await _resolve_yahoo_symbol_internal(client, db_symbol)
+    
+    # If ticker doesn't already have a suffix, append .NS as standard default
+    if not (yahoo_ticker.endswith(".NS") or yahoo_ticker.endswith(".BO")):
+        ticker_to_query = f"{yahoo_ticker}.NS"
+    else:
+        ticker_to_query = yahoo_ticker
+
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker_to_query}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    
+    try:
+        response = await client.get(url, headers=headers, timeout=10.0)
+        if response.status_code == 200:
+            data = response.json()
+            meta = data.get("chart", {}).get("result", [{}])[0].get("meta", {})
+            price = meta.get("regularMarketPrice")
+            if price is not None:
+                return float(price)
+    except Exception as e:
+        logger.error(f"Error fetching price for '{db_symbol}' ({ticker_to_query}): {e}")
+    return None
+
+async def get_stock_prices(conn: asyncpg.Connection, symbols: List[str]) -> Dict[str, float]:
+    """Retrieve current stock prices from database for a list of symbols, fetching missing ones from Yahoo Finance."""
+    if not symbols:
+        return {}
+        
+    symbols_upper = [s.strip().upper() for s in symbols if s]
+    
+    # 1. Fetch existing prices from DB
+    query = """
+        SELECT symbol, price
+        FROM stock_prices
+        WHERE UPPER(symbol) = ANY($1)
+    """
+    rows = await conn.fetch(query, symbols_upper)
+    price_map = {row["symbol"].upper(): float(row["price"]) for row in rows}
+    
+    # 2. Identify missing symbols
+    missing_symbols = [sym for sym in symbols_upper if sym not in price_map]
+    
+    if missing_symbols:
+        logger.info(f"Missing stock prices in DB for: {missing_symbols}. Fetching dynamically from Yahoo Finance...")
+        async with httpx.AsyncClient() as client:
+            # Fetch concurrently
+            tasks = [(_fetch_stock_price_internal(client, sym), sym) for sym in missing_symbols]
+            results = await asyncio.gather(*(t[0] for t in tasks))
+            
+            for (task_obj, sym), price in zip(tasks, results):
+                if price is not None:
+                    # Save to DB cache
+                    try:
+                        await conn.execute("""
+                            INSERT INTO stock_prices (symbol, price, updated_at)
+                            VALUES ($1, $2, CURRENT_TIMESTAMP)
+                            ON CONFLICT (symbol)
+                            DO UPDATE SET price = EXCLUDED.price, updated_at = CURRENT_TIMESTAMP;
+                        """, sym, price)
+                        price_map[sym] = price
+                        logger.info(f"Dynamically fetched and cached price for '{sym}': ₹{price}")
+                    except Exception as e:
+                        logger.error(f"Failed to save dynamic price for '{sym}' to DB: {e}")
+                        price_map[sym] = price # Still add to map for current request
+                        
+    return price_map
+
 
 
 

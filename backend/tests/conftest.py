@@ -53,3 +53,15 @@ async def clean_database():
     if app.db.session.pg_pool:
         async with app.db.session.pg_pool.acquire() as conn:
             await conn.execute("DELETE FROM users WHERE email LIKE 'testuser_%'")
+
+
+@pytest.fixture(autouse=True)
+def mock_stock_price_fetching():
+    from unittest.mock import patch
+    from app.services.portfolio_risk import MOCK_MARKET_PRICES
+    
+    async def mock_fetch(client, symbol):
+        return MOCK_MARKET_PRICES.get(symbol.upper())
+
+    with patch("app.db.crud.portfolio._fetch_stock_price_internal", side_effect=mock_fetch):
+        yield

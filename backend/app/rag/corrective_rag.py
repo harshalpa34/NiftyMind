@@ -1,5 +1,7 @@
 import json
 import logging
+import hashlib
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
@@ -8,10 +10,10 @@ from google.genai import errors, types
 from langchain_core.documents import Document
 
 from app.config import get_settings
-
-from app.config import get_settings
 from app.graph.graph_query import graph_query
 from app.rag.vector_store import vector_store
+from app.db.session import pg_pool
+from app.db.crud.cache_registry import get_active_cache, register_cache
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -27,8 +29,8 @@ class BatchCorporateHighlightsSchema(BaseModel):
     highlights: List[CorporateHighlightItem] = Field(description="List of corporate highlights summaries, one for each requested stock symbol.")
 
 QA_SYSTEM_PROMPT = """
-You are a SEBI-compliant financial analyst assistant for NiftyMind.
-Answer ONLY from provided context, never use outside knowledge, never give investment advice,
+You are a financial analyst assistant for NiftyMind.
+Answer ONLY from provided context, never use outside knowledge,
 cite company and quarter for numbers, keep answers 3-5 sentences, and use factual language.
 """.strip()
 
@@ -37,18 +39,77 @@ class CorrectiveRAGService:
     def __init__(self):
         self._client = genai.Client(api_key=settings.gemini_api_key)
 
+    async def _get_or_create_context_cache(self, static_context: str, system_instruction: str) -> Optional[str]:
+        if not pg_pool:
+            return None
+            
+        try:
+            # 1. Count tokens to check threshold (minimum 32k for caching)
+            token_count_resp = await self._client.aio.models.count_tokens(
+                model=settings.model_name,
+                contents=static_context
+            )
+            num_tokens = token_count_resp.total_tokens
+            if num_tokens < 32768:
+                logger.info(f"[CorrectiveRAG] Context tokens ({num_tokens}) below threshold (32768). Skipping cache.")
+                return None
+                
+            # 2. Compute hash of the static context
+            context_hash = hashlib.md5(static_context.encode("utf-8")).hexdigest()
+            
+            async with pg_pool.acquire() as conn:
+                # 3. Check registry for active cache
+                active = await get_active_cache(conn, context_hash)
+                if active:
+                    return active["google_cache_name"]
+                
+                # 4. Create new cache on Google GenAI
+                logger.info(f"[CorrectiveRAG] Creating Google GenAI Context Cache for {num_tokens} tokens...")
+                cache = await self._client.aio.caches.create(
+                    model=settings.model_name,
+                    config=types.CreateCachedContentConfig(
+                        display_name=f"rag_static_{context_hash[:8]}",
+                        system_instruction=system_instruction,
+                        contents=[static_context],
+                        ttl="1800s",  # 30 minutes cache duration
+                    )
+                )
+                
+                # Convert expire_time from string format or datetime object
+                expires_dt = None
+                if hasattr(cache, "expire_time") and cache.expire_time:
+                    expire_time = cache.expire_time
+                    if isinstance(expire_time, str):
+                        if expire_time.endswith("Z"):
+                            expire_time = expire_time[:-1] + "+00:00"
+                        expires_dt = datetime.fromisoformat(expire_time)
+                    elif isinstance(expire_time, datetime):
+                        expires_dt = expire_time
+                if not expires_dt:
+                    from datetime import timedelta
+                    expires_dt = datetime.now(timezone.utc) + timedelta(minutes=30)
+                    
+                # 5. Register in DB
+                await register_cache(conn, context_hash, cache.name, expires_dt)
+                return cache.name
+        except Exception as exc:
+            logger.warning(f"[CorrectiveRAG] Failed to manage context cache: {exc}. Falling back to normal flow.")
+            return None
+
     async def ask(
         self,
         question: str,
         top_k: int = 4,
         confidence_threshold: float = HIGH_CONFIDENCE_THRESHOLD,
         filter_company: Optional[str] = None,
+        namespace: str = "earnings",
     ) -> dict:
         try:
             vector_results = self._retrieve_from_vector(
                 question,
                 top_k,
                 filter_company,
+                namespace,
             )
 
             confidence = self._compute_confidence(vector_results)
@@ -127,12 +188,14 @@ class CorrectiveRAGService:
         question: str,
         top_k: int,
         filter_company: Optional[str],
+        namespace: str = "earnings",
     ) -> list[Document]:
         try:
             return vector_store.query(
                 question=question,
                 top_k=top_k,
                 filter_company=filter_company,
+                namespace=namespace,
             )
         except Exception as exc:
             logger.error(
@@ -209,20 +272,34 @@ class CorrectiveRAGService:
         return "\n\n".join(parts)
 
     async def _generate_answer(self, question: str, context: str) -> tuple[str, bool]:
-        prompt = (
-            f"CONTEXT:\n{context}\n\nQUESTION:\n{question}"
-        )
-
         try:
-            response = await self._client.aio.models.generate_content(
-                model=settings.model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=QA_SYSTEM_PROMPT,
-                    max_output_tokens=512,
-                    temperature=0.1,
-                ),
-            )
+            # Check for active static context cache
+            cache_name = await self._get_or_create_context_cache(context, QA_SYSTEM_PROMPT)
+            
+            if cache_name:
+                logger.info(f"[CorrectiveRAG] Querying with context cache: {cache_name}")
+                response = await self._client.aio.models.generate_content(
+                    model=settings.model_name,
+                    contents=f"QUESTION:\n{question}",
+                    config=types.GenerateContentConfig(
+                        cached_content=cache_name,
+                        max_output_tokens=512,
+                        temperature=0.1,
+                    ),
+                )
+            else:
+                prompt = (
+                    f"CONTEXT:\n{context}\n\nQUESTION:\n{question}"
+                )
+                response = await self._client.aio.models.generate_content(
+                    model=settings.model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=QA_SYSTEM_PROMPT,
+                        max_output_tokens=512,
+                        temperature=0.1,
+                    ),
+                )
 
             token_usage = getattr(response, "token_usage", None)
             logger.info(
@@ -263,6 +340,7 @@ class CorrectiveRAGService:
         symbols: List[str],
         top_k: int = 3,
         confidence_threshold: float = HIGH_CONFIDENCE_THRESHOLD,
+        namespace: str = "earnings",
     ) -> Dict[str, str]:
         """
         Runs batched corrective RAG for multiple stock symbols:
@@ -310,7 +388,7 @@ class CorrectiveRAGService:
                 query_response = vector_store._index.query(
                     vector=q_emb,
                     top_k=fetch_k,
-                    namespace="earnings",
+                    namespace=namespace,
                     include_metadata=True,
                 )
 
@@ -359,28 +437,49 @@ class CorrectiveRAGService:
             )
         contexts_prompt = "\n\n".join(formatted_contexts)
 
-        prompt = f"""
-        You are a financial news and corporate highlights analyst. Given the transcript/data context for the following stock symbols, extract the corporate transcript insights (management guidance, operating margin performance, and main risk factors) for each symbol.
-        
-        CONTEXTS FOR ALL SYMBOLS:
-        {contexts_prompt}
-        
-        Generate highlights for each symbol matching the requested JSON schema. Make sure you return an entry for every input symbol in: {symbols}.
-        """
-
         try:
-            logger.info(f"[RAGBatch] Calling Gemini for RAG batch content generation on {len(symbols)} symbols")
-            response = await self._client.aio.models.generate_content(
-                model=settings.model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=QA_SYSTEM_PROMPT,
-                    response_mime_type="application/json",
-                    response_schema=BatchCorporateHighlightsSchema,
-                    max_output_tokens=1024,
-                    temperature=0.1,  # strict & fast
-                ),
-            )
+            # Check for active static context cache
+            cache_name = await self._get_or_create_context_cache(contexts_prompt, QA_SYSTEM_PROMPT)
+            
+            if cache_name:
+                logger.info(f"[RAGBatch] Querying with context cache: {cache_name}")
+                prompt = f"""
+                You are a financial news and corporate highlights analyst. Given the cached transcript/data contexts, extract the corporate transcript insights (management guidance, operating margin performance, and main risk factors) for the following stock symbols.
+                
+                Generate highlights for each symbol matching the requested JSON schema. Make sure you return an entry for every input symbol in: {symbols}.
+                """
+                response = await self._client.aio.models.generate_content(
+                    model=settings.model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        cached_content=cache_name,
+                        response_mime_type="application/json",
+                        response_schema=BatchCorporateHighlightsSchema,
+                        max_output_tokens=1024,
+                        temperature=0.1,  # strict & fast
+                    ),
+                )
+            else:
+                prompt = f"""
+                You are a financial news and corporate highlights analyst. Given the transcript/data context for the following stock symbols, extract the corporate transcript insights (management guidance, operating margin performance, and main risk factors) for each symbol.
+                
+                CONTEXTS FOR ALL SYMBOLS:
+                {contexts_prompt}
+                
+                Generate highlights for each symbol matching the requested JSON schema. Make sure you return an entry for every input symbol in: {symbols}.
+                """
+                logger.info(f"[RAGBatch] Calling Gemini for RAG batch content generation on {len(symbols)} symbols")
+                response = await self._client.aio.models.generate_content(
+                    model=settings.model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=QA_SYSTEM_PROMPT,
+                        response_mime_type="application/json",
+                        response_schema=BatchCorporateHighlightsSchema,
+                        max_output_tokens=1024,
+                        temperature=0.1,  # strict & fast
+                    ),
+                )
             result = json.loads(response.text)
             highlights_ai = result.get("highlights", [])
 

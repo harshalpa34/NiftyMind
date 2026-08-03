@@ -8,13 +8,9 @@ from app.core.logging import setup_logging
 from app.core.exceptions import register_exception_handlers
 from app.middleware.request_id import RequestIDMiddleware
 from app.api.routes.health import router as health_router
-# from app.api.routes.webhooks import router as webhooks_router
-# from app.analytics.fno.routes.option_chain import router as option_chain_router
-# from app.analytics.fno.routes.ws_feed import router as ws_feed_router
 from app.api.routes.ws_session import router as ws_session_router
 from app.api.routes.sessions import router as sessions_router
 from app.api.routes.rag import router as rag_router
-# from app.analytics.fno.websockets.feed_simulator import run_feed_simulator
 import app.graphs.trader_session as trader_session_module
 from app.graph.neo4j_client import neo4j_client
 from app.api.routes.graph import router as graph_router
@@ -31,8 +27,6 @@ from app.db.session import get_session_factory, init_pg_pool, close_pg_pool
 # Get settings
 settings = get_settings()
 
-# Global variable to hold simulator task
-simulator_task = None
 
 
 
@@ -40,7 +34,6 @@ simulator_task = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
-    global simulator_task
     
     # Startup
     setup_logging()  # Initialize structured logging FIRST
@@ -60,8 +53,7 @@ async def lifespan(app: FastAPI):
     trader_session_module.trader_graph = trader_session_module.initialize_graph()
     logger.info("Trader session graph ready")
     
-    # Start feed simulator (paused)
-    # simulator_task = asyncio.create_task(run_feed_simulator())
+
     # Connect Neo4j client (may raise if URI not configured)
     try:
         neo4j_client.connect(settings.neo4j_uri, settings.neo4j_username, settings.neo4j_password)
@@ -83,13 +75,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.exception(f"Error disposing database engine: {e}")
     
-    # Cancel simulator task (paused)
-    if simulator_task:
-        simulator_task.cancel()
-        try:
-            await simulator_task
-        except asyncio.CancelledError:
-            pass
+
     # Close neo4j client
     try:
         neo4j_client.close()
@@ -125,9 +111,6 @@ register_exception_handlers(app)
 
 # Include routers
 app.include_router(health_router)
-# app.include_router(webhooks_router)
-# app.include_router(option_chain_router)
-# app.include_router(ws_feed_router)
 app.include_router(ws_session_router)
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(rag_router, prefix="/api/v1")

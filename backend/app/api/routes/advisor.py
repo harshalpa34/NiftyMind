@@ -4,7 +4,7 @@ import asyncpg
 
 from app.auth.dependencies import CurrentUser
 from app.db.session import get_raw_db
-from app.db.crud.portfolio import get_portfolio, get_holdings, get_transactions
+from app.db.crud.portfolio import get_portfolio, get_holdings, get_transactions, get_stock_prices
 from app.services.portfolio_risk import portfolio_risk_service
 from app.services.behavior_analyzer import behavior_analyzer
 from app.services.portfolio_advisor import portfolio_advisor
@@ -36,11 +36,15 @@ async def api_get_portfolio_summary(
     holdings = await get_holdings(conn, portfolio_id)
     transactions = await get_transactions(conn, portfolio_id)
     
+    # 2.5 Fetch current stock prices from DB
+    symbols = [h["symbol"].upper() for h in holdings]
+    price_map = await get_stock_prices(conn, symbols)
+    
     # 3. Calculate risk metrics
-    risk_metrics = portfolio_risk_service.calculate_risk_metrics(holdings)
+    risk_metrics = portfolio_risk_service.calculate_risk_metrics(holdings, price_map)
     
     # 4. Analyze behavioral flags
-    behavioral_flags = behavior_analyzer.analyze_portfolio(holdings, transactions)
+    behavioral_flags = behavior_analyzer.analyze_portfolio(holdings, transactions, price_map)
     
     # 5. Generate AI insights
     summary = await portfolio_advisor.generate_portfolio_summary(

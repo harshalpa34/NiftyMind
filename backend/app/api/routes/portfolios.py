@@ -4,7 +4,7 @@ import io
 import re
 import logging
 from typing import List, Optional, Any
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from pydantic import BaseModel, Field
 import asyncpg
 
@@ -21,6 +21,7 @@ from app.db.crud.portfolio import (
     record_transaction,
     get_transactions,
 )
+from app.services.graph_sync_service import graph_sync_service
 
 logger = logging.getLogger(__name__)
 
@@ -186,9 +187,11 @@ async def api_get_transactions(
 async def api_import_csv_portfolio(
     portfolio_id: uuid.UUID,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     conn: asyncpg.Connection = Depends(get_raw_db)
 ):
+
     """Import holdings in bulk from an uploaded CSV or Excel file with flexible header detection."""
     portfolio = await get_portfolio(conn, portfolio_id, current_user.id)
     if not portfolio:
@@ -273,6 +276,8 @@ async def api_import_csv_portfolio(
                        "3) Avg Price (e.g. Average buy price, Average Cost)."
             )
             
+        symbols_to_map = []
+        
         # Wrap holdings replacement in a single database transaction block
         async with conn.transaction():
             # Clear all current holdings for this portfolio before importing the new ones
@@ -303,8 +308,13 @@ async def api_import_csv_portfolio(
                     continue
                     
                 await upsert_holding(conn, portfolio_id, symbol, quantity, average_buy_price)
+                symbols_to_map.append(symbol)
                 imported_count += 1
             
+        # Queue background graph mapping tasks after transaction commits successfully
+        for sym in set(symbols_to_map):
+            background_tasks.add_task(graph_sync_service.ensure_company_mapped, sym)
+
         logger.info(
             "Portfolio ingestion complete",
             extra={"portfolio_id": str(portfolio_id), "imported_count": imported_count}
@@ -314,6 +324,7 @@ async def api_import_csv_portfolio(
             "message": f"Successfully imported {imported_count} holdings.",
             "imported_count": imported_count
         }
+
         
     except HTTPException:
         raise

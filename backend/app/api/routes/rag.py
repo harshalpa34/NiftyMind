@@ -79,7 +79,7 @@ class RAGQueryResponse(BaseModel):
 @router.post("/ingest", response_model=IngestResponse, status_code=201)
 async def ingest_documents(
     request: IngestRequest,
-    current_user: Annotated[CurrentUser, Depends()],
+    current_user: CurrentUser,
 ) -> IngestResponse:
     """
     Load and ingest transcript documents into the vector store (user-scoped namespace).
@@ -121,8 +121,8 @@ async def ingest_documents(
                 detail="Failed to chunk documents"
             )
         
-        # Ingest into vector store with user namespace
-        chunks_ingested = vector_store.ingest(chunks, namespace=namespace)
+        # Ingest into vector store with global default namespace
+        chunks_ingested = vector_store.ingest(chunks, namespace="earnings")
         
         if chunks_ingested == 0:
             raise HTTPException(
@@ -154,7 +154,7 @@ async def ingest_documents(
 @router.post("/query", response_model=RAGQueryResponse)
 async def query_documents(
     request: RAGQueryRequest,
-    current_user: Annotated[CurrentUser, Depends()],
+    current_user: CurrentUser,
 ) -> RAGQueryResponse:
     """
     Query the vector store for relevant documents (user-scoped namespace).
@@ -180,12 +180,12 @@ async def query_documents(
     )
     
     try:
-        # Query the vector store with user namespace
+        # Query the vector store with global default namespace
         results = vector_store.query(
             question=request.question,
             top_k=request.top_k,
             filter_company=request.filter_company,
-            namespace=namespace
+            namespace="earnings"
         )
         
         # Map results to RAGChunk objects
@@ -201,8 +201,8 @@ async def query_documents(
                 )
             )
         
-        # Get vector store stats for user namespace
-        stats = vector_store.get_stats(namespace=namespace)
+        # Get vector store stats for global default namespace
+        stats = vector_store.get_stats(namespace="earnings")
         
         logger.info(
             "RAG query complete",
@@ -226,7 +226,7 @@ async def query_documents(
 @router.post("/ask", tags=["Corporate Actions RAG"])
 async def ask_question(
     request: AskRequest,
-    current_user: Annotated[CurrentUser, Depends()],
+    current_user: CurrentUser,
 ) -> dict:
     """
     Ask the corrective RAG pipeline for a contextual answer (user-scoped).
@@ -253,6 +253,7 @@ async def ask_question(
         top_k=request.top_k,
         confidence_threshold=request.confidence_threshold,
         filter_company=request.filter_company,
+        namespace="earnings",
     )
     
     # Add requested_by metadata
@@ -263,7 +264,7 @@ async def ask_question(
 
 @router.get("/stats")
 async def get_stats(
-    current_user: Annotated[CurrentUser, Depends()],
+    current_user: CurrentUser,
 ) -> dict:
     """
     Get statistics about the vector store for current user.
@@ -282,4 +283,45 @@ async def get_stats(
         extra={"user_id": user_id, "namespace": namespace}
     )
     
-    return vector_store.get_stats(namespace=namespace)
+    return vector_store.get_stats(namespace="earnings")
+
+
+@router.get("/preset-questions")
+async def get_preset_questions(
+    current_user: CurrentUser,
+) -> dict:
+    """
+    Get dynamically generated suggested questions based on available transcripts.
+    """
+    import os
+    # Get available transcripts
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    transcripts_dir = os.path.join(base_dir, "data", "transcripts")
+    
+    companies = []
+    if os.path.exists(transcripts_dir):
+        for f in os.listdir(transcripts_dir):
+            if f.endswith(".txt") and "_q3_fy25" in f.lower():
+                parts = f.lower().split("_q3_fy25")
+                name = parts[0].replace("_", " ").strip().title()
+                if name:
+                    if name.lower() in ("tcs", "infy", "itc", "sbin", "wipro"):
+                        companies.append(name.upper())
+                    else:
+                        companies.append(name)
+                        
+    if not companies:
+        companies = ["TCS", "HDFC Bank", "Infosys"]
+        
+    selected = sorted(list(set(companies)))[:3]
+    if len(selected) < 3:
+        selected.extend([c for c in ["TCS", "HDFC Bank", "Infosys"] if c not in selected])
+    selected = selected[:3]
+    
+    questions = [
+        f"What is the management guidance and margin outlook for {selected[0]}?",
+        f"Summarize operating performance and risk factors for {selected[1]}",
+        f"Show company metrics, dividends, and competitors",
+        f"What did {selected[2]} say about revenue growth guidance?"
+    ]
+    return {"questions": questions}

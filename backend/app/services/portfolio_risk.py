@@ -59,12 +59,18 @@ class PortfolioRiskService:
         # 2. Fall back to local dictionary
         return FALLBACK_SECTORS.get(symbol_upper, "Other / Unclassified")
 
-    def get_current_price(self, symbol: str, avg_buy_price: float) -> float:
-        """Resolve current spot price using mock data, falling back to avg buy price."""
+    def get_current_price(self, symbol: str, avg_buy_price: float, price_map: Dict[str, float] = None) -> float:
+        """Resolve current spot price using DB prices, mock data, or falling back to avg buy price."""
         symbol_upper = symbol.strip().upper()
+        if price_map and symbol_upper in price_map:
+            return price_map[symbol_upper]
         return MOCK_MARKET_PRICES.get(symbol_upper, avg_buy_price)
 
-    def calculate_risk_metrics(self, holdings: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def calculate_risk_metrics(
+        self, 
+        holdings: List[Dict[str, Any]], 
+        price_map: Dict[str, float] = None
+    ) -> Dict[str, Any]:
         """
         Calculate exposure, concentration, and diversification metrics.
         """
@@ -87,7 +93,7 @@ class PortfolioRiskService:
             qty = float(h["quantity"])
             avg_price = float(h["average_buy_price"])
             
-            curr_price = self.get_current_price(symbol, avg_price)
+            curr_price = self.get_current_price(symbol, avg_price, price_map)
             pos_value = qty * curr_price
             total_value += pos_value
             

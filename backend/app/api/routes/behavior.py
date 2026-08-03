@@ -5,7 +5,7 @@ from typing import List
 
 from app.auth.dependencies import CurrentUser
 from app.db.session import get_raw_db
-from app.db.crud.portfolio import get_portfolio, get_holdings, get_transactions
+from app.db.crud.portfolio import get_portfolio, get_holdings, get_transactions, get_stock_prices
 from app.services.behavior_analyzer import behavior_analyzer
 
 router = APIRouter(prefix="/behavioral-analysis", tags=["Behavioral Guardrails"])
@@ -34,6 +34,10 @@ async def api_get_behavioral_analysis(
     holdings = await get_holdings(conn, portfolio_id)
     transactions = await get_transactions(conn, portfolio_id)
     
+    # 2.5 Fetch current stock prices from DB
+    symbols = [h["symbol"].upper() for h in holdings]
+    price_map = await get_stock_prices(conn, symbols)
+    
     # 3. Analyze patterns
-    flags = behavior_analyzer.analyze_portfolio(holdings, transactions)
+    flags = behavior_analyzer.analyze_portfolio(holdings, transactions, price_map)
     return flags
