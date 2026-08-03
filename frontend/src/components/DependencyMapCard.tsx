@@ -323,7 +323,7 @@ export const DependencyMapCard: React.FC<DependencyMapCardProps> = ({
               style={{
                 fontSize: "0.7rem",
                 textTransform: "uppercase",
-                tracking: "0.05em",
+                letterSpacing: "0.05em",
                 color: "var(--text-secondary)",
               }}
             >

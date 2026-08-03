@@ -1,7 +1,8 @@
-@import "./components/danger-zone-banner";
-@import "./components/holdings-card";
-@import "./components/watchdog-card";
-@import "./components/bulk-import-card";
-@import "./components/tabs-switcher";
-@import "./pages/portfolio-view";
-@import "./pages/rag-view";
+@use "./components/danger-zone-banner";
+@use "./components/holdings-card";
+@use "./components/watchdog-card";
+@use "./components/bulk-import-card";
+@use "./components/tabs-switcher";
+@use "./pages/portfolio-view";
+@use "./pages/rag-view";
+
