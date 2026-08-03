@@ -7,6 +7,8 @@ import DangerZoneBanner from "../components/DangerZoneBanner";
 import HoldingsCard from "../components/HoldingsCard";
 import WatchdogCard from "../components/WatchdogCard";
 import BulkImportCard from "../components/BulkImportCard";
+import RiskGauge from "../components/RiskGauge";
+import DependencyMapCard from "../components/DependencyMapCard";
 import { ArrowLeft } from "lucide-react";
 
 interface Holding {
@@ -42,7 +44,8 @@ export const PortfolioView: React.FC = () => {
   const [healthData, setHealthData] = useState<any>(null);
   const [dangerZone, setDangerZone] = useState<any>(null);
   const [watchdogRefreshing, setWatchdogRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"holdings" | "watchdog">("holdings");
+  const [activeTab, setActiveTab] = useState<"holdings" | "watchdog" | "dependencies">("holdings");
+
 
   const handleRefreshWatchdog = async () => {
     if (!id) return;
@@ -156,22 +159,42 @@ export const PortfolioView: React.FC = () => {
             >
               AI Watchdog
             </button>
+            <button
+              type="button"
+              className={`tabs-switcher-btn ${activeTab === "dependencies" ? "active" : ""}`}
+              onClick={() => setActiveTab("dependencies")}
+            >
+              Dependency Explorer
+            </button>
           </div>
 
           {activeTab === "holdings" ? (
             <HoldingsCard holdings={holdings} risk={risk} />
-          ) : (
+          ) : activeTab === "watchdog" ? (
             <WatchdogCard
               portfolioId={portfolio.id}
               healthData={healthData}
               watchdogRefreshing={watchdogRefreshing}
               handleRefreshWatchdog={handleRefreshWatchdog}
             />
+          ) : (
+            <DependencyMapCard
+              portfolioId={portfolio.id}
+              holdings={holdings}
+            />
           )}
         </div>
 
+
         {/* Right Hand Column: Analytics & Import Card */}
         <div style={{ display: "flex", flexDirection: "column", gap: "30px" }}>
+          {/* Portfolio Diversification Gauge */}
+          {risk && (
+            <Card title="Portfolio Diversification">
+              <RiskGauge score={risk.diversification_score} />
+            </Card>
+          )}
+
           {/* Behavioral Flags */}
           <Card title="Behavioral Guardrails">
             <GuardrailAlerts flags={flags} />

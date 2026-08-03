@@ -5,6 +5,7 @@ import Navbar from "./components/Navbar";
 import AuthPage from "./pages/AuthPage";
 import Dashboard from "./pages/Dashboard";
 import PortfolioView from "./pages/PortfolioView";
+import RagView from "./pages/RagView";
 
 // Component to protect authenticated routes
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -49,6 +50,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <PortfolioView />
+              </ProtectedRoute>
+            } 
+          />
+
+          <Route 
+            path="/rag" 
+            element={
+              <ProtectedRoute>
+                <RagView />
               </ProtectedRoute>
             } 
           />

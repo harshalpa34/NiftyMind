@@ -34,6 +34,7 @@ export const HoldingsCard: React.FC<HoldingsCardProps> = ({ holdings, risk }) =>
                 <th>Avg Price</th>
                 <th>Current Price</th>
                 <th>Current Value</th>
+                <th>P & L</th>
               </tr>
             </thead>
             <tbody>
@@ -46,6 +47,11 @@ export const HoldingsCard: React.FC<HoldingsCardProps> = ({ holdings, risk }) =>
                 );
                 const currVal = matches?.value || qty * avgPrice;
                 const currPrice = matches ? currVal / qty : avgPrice;
+
+                const investedVal = qty * avgPrice;
+                const plAmt = currVal - investedVal;
+                const plPct = avgPrice > 0 ? ((currPrice - avgPrice) / avgPrice) * 100 : 0;
+                const plColor = plAmt >= 0 ? "var(--alert-success)" : "var(--alert-error)";
 
                 return (
                   <tr key={holding.id}>
@@ -60,6 +66,19 @@ export const HoldingsCard: React.FC<HoldingsCardProps> = ({ holdings, risk }) =>
                       {currVal.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                       })}
+                    </td>
+                    <td style={{ color: plColor, fontWeight: 600 }}>
+                      <div>
+                        {plAmt >= 0 ? "+" : ""}₹
+                        {plAmt.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
+                      <div style={{ fontSize: "0.75rem", opacity: 0.85, marginTop: "2px" }}>
+                        {plAmt >= 0 ? "+" : ""}
+                        {plPct.toFixed(2)}%
+                      </div>
                     </td>
                   </tr>
                 );

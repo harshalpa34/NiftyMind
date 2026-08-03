@@ -1,11 +1,12 @@
 import React from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { LogOut, ShieldAlert, User } from "lucide-react";
+import { LogOut, ShieldAlert, User, LayoutDashboard, Search } from "lucide-react";
 
 export const Navbar: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = () => {
     logout();
@@ -69,6 +70,43 @@ export const Navbar: React.FC = () => {
 
       {user && (
         <div style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+          {/* Navigation Links */}
+          <div style={{ display: "flex", alignItems: "center", gap: "16px", marginRight: "16px" }}>
+            <Link 
+              to="/" 
+              style={{
+                textDecoration: "none",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                fontSize: "0.9rem",
+                fontWeight: 600,
+                color: location.pathname === "/" ? "var(--primary-color)" : "var(--text-secondary)",
+                transition: "color 0.2s",
+              }}
+            >
+              <LayoutDashboard size={16} />
+              Dashboard
+            </Link>
+
+            <Link 
+              to="/rag" 
+              style={{
+                textDecoration: "none",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                fontSize: "0.9rem",
+                fontWeight: 600,
+                color: location.pathname === "/rag" ? "var(--primary-color)" : "var(--text-secondary)",
+                transition: "color 0.2s",
+              }}
+            >
+              <Search size={16} />
+              Corporate RAG
+            </Link>
+          </div>
+
           <div style={{
             display: "flex",
             alignItems: "center",

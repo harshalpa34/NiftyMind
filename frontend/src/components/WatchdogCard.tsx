@@ -10,7 +10,7 @@ interface WatchdogCardProps {
 }
 
 export const WatchdogCard: React.FC<WatchdogCardProps> = ({
-  portfolioId,
+  portfolioId: _portfolioId,
   healthData,
   watchdogRefreshing,
   handleRefreshWatchdog,
